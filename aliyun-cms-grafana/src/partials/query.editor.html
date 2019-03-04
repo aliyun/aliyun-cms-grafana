@@ -1,0 +1,68 @@
+<query-editor-row query-ctrl="ctrl" class="generic-datasource-query-row" has-text-edit-mode="true">
+	<div class="gf-form-inline">
+		<div class="gf-form">
+			<label class="gf-form-label query-keyword width-7">
+                Project
+                <info-popover mode="right-normal">指标的Project(支持自定义监控指标:acs_custom_$uid;日志监控指标:acs_logMonitor_$uid)</info-popover>
+            </label>
+			<div class="gf-form-select-wrapper max-width-40">
+				<input type="text" ng-model="ctrl.target.project" bs-typeahead="ctrl.project_list" ng-change="ctrl.projectChanged()" data-min-length=0 data-items=300 style="width: 320px" class="gf-form-input" />
+			</div>
+		</div>
+		<div class="gf-form">
+			<label class="gf-form-label query-keyword width-7">
+                Metric
+                <info-popover mode="right-normal">指标名</info-popover>
+            </label>
+			<div class="gf-form-select-wrapper max-width-40">
+				<input type="text" ng-model="ctrl.target.metric" bs-typeahead="ctrl.metric_list" ng-change="ctrl.metricChanged()" ng-blur="ctrl.ensureDimension()" data-min-length=0 data-items=300 style="width: 320px" class="gf-form-input" />
+			</div>
+		</div>
+		<div class="gf-form">
+			<label class="gf-form-label query-keyword width-7">
+                Period
+                <info-popover mode="right-normal">Interval between points in seconds, not mandatory</info-popover>
+            </label>
+			<div class="gf-form-select-wrapper max-width-20">
+				<input type="text" ng-model="ctrl.target.period" bs-typeahead="ctrl.target.periods" ng-blur="ctrl.onChangeInternal()" data-min-length=0 data-items=100 class="gf-form-input" />
+			</div>
+		</div>
+	</div>
+
+	<div class="gf-form-inline">
+		<div class="gf-form">
+			<label class="gf-form-label query-keyword width-7">
+				Values
+				<info-popover mode="right-normal">统计方法，比如Average 、Minimum 、Maximum等，此项可以下拉选择一项或者多项，已选项会以标签的方式列在右侧，你可以点击标签上的X删除一个已选项。注意：选择此项必须先选择Metric</info-popover>
+			</label>
+			<div class="gf-form-select-wrapper max-width-20">
+				<input type="text" ng-model="ctrl.fieldName" bs-typeahead="ctrl.target.fieldNames" ng-blur="ctrl.fieldNameChanged(ctrl.fieldName)" data-min-length=0 data-items=100 class="gf-form-input" />
+			</div>
+			<div class="gf-form gf-form--grow">
+				<div class="gf-form-label gf-form-label--grow"></div>
+			</div>
+		</div>
+		<div class="gf-form">
+			<div ng-show="ctrl.target.selectedFieldNames != []" class="gf-form-label query-part" ng-repeat="field in ctrl.target.selectedFieldNames track by $index">
+				<a>{{field}}</a>
+				<span class="pointer fa fa-remove" style="color:firebrick;" ng-click="ctrl.removeSelectedField($event,field)"></span>
+			</div>
+		</div>
+	</div>
+
+	<div class="gf-form-inline" ng-hide="ctrl.target.metric == ''">
+		<div class="gf-form">
+			<label class="gf-form-label query-keyword width-7">Dimensions</label>
+		</div>
+		<div class="gf-form" ng-repeat="kv in ctrl.target.dimKVs track by $index">
+			<label ng-if="($index > 0) && (($index)%2==0)" class="gf-form-label query-keyword width-7" style="visibility: hidden"></label>
+			<label class="gf-form-label query-keyword width-7" style="color: green;">{{kv.key}}</label>
+			<div class="gf-form-label gf-form-label--grow">=</div>
+			<input type="text" ng-model="ctrl.target.dimKVs[$index].value" ng-mousedown="ctrl.getDimensionValues(kv.key)" bs-typeahead="ctrl.dimensionValues" ng-change="ctrl.onTargetBlur(kv.key,$index)" value="{{kv.value}}" data-min-length=0 data-items=100 class="gf-form-input" />
+			<div class="gf-form gf-form--grow">
+				<div class="gf-form-label gf-form-label--grow"></div>
+			</div>
+			<br ng-show="($index+1)%2==0" />
+		</div>
+	</div>
+</query-editor-row>

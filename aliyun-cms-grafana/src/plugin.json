@@ -1,0 +1,30 @@
+{
+  "name": "metricstore",
+  "id": "metricstore-datasource",
+  "type": "datasource",
+  "metrics": true,
+  "annotations": true,
+  "info": {
+    "description": "Grafana datasource for aliyun CloudMonitor",
+    "author": {
+      "name": "cms",
+      "url": "http://gitlab.alibaba-inc.com/cms/metricstore4grafana"
+    },
+    "logos": {
+      "small": "img/yunjiankong.png",
+      "large": "img/yunjiankong.png"
+    },
+    "links": [
+      {
+        "name": "GitHub",
+        "url": "http://gitlab.alibaba-inc.com/cms/metricstore4grafana"
+      }
+    ],
+    "version": "1.0.2",
+    "updated": "2017-05-19"
+  },
+  "dependencies": {
+    "grafanaVersion": "3.x.x",
+    "plugins": []
+  }
+}
