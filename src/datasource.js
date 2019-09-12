@@ -76,7 +76,12 @@ export class GenericDatasource {
               var dimensionJson = target.dimensions;
               var i = dimensionJson.length;
               while (i--) {
-                dimensionArray.push({"instanceId":dimensionJson[i]});
+                //判断是否使用了变量
+                if (dimensionJson[i][0] === '$') {
+                  dimensionArray.push({ "instanceId": this.templateSrv.replace(dimensionJson[i]) });
+                } else {
+                  dimensionArray.push({ "instanceId": dimensionJson[i] });
+                }
               }
               dimensions ='';
               dimensions =dimensions.concat(JSON.stringify(dimensionArray));
