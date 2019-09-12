@@ -76,7 +76,7 @@ export class GenericDatasource {
               var dimensionJson = target.dimensions;
               var i = dimensionJson.length;
               while (i--) {
-                //判断是否使用了变量
+                //判断是否使用了变量，如果使用了变量将其替换为所选值
                 if (dimensionJson[i][0] === '$') {
                   dimensionArray.push({ "instanceId": this.templateSrv.replace(dimensionJson[i]) });
                 } else {
