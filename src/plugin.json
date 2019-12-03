@@ -21,11 +21,14 @@
       "large": "img/yunjiankong.png"
     },
     "links": [
-      {"name": "GitHub", "url": "http://gitlab.alibaba-inc.com/cms/aliyun-cms-grafana.git"},
-      {"name": "MIT License", "url": "http://gitlab.alibaba-inc.com/cms/aliyun-cms-grafana.git"}
+      {"name": "GitHub", "url": "https://github.com/aliyun/aliyun-cms-grafana.git"},
+      {"name": "MIT License", "url": "https://github.com/aliyun/aliyun-cms-grafana.git"}
     ],
-    "version": "1.0.0",
-    "created": "2018-10-10"
+
+    "version": "1.0.1",
+    "created": "2018-10-10",
+    "modify":"2019-04-11",
+    "cms open api version":"20180308"
   },
 
   "dependencies": {

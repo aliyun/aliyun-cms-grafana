@@ -8,10 +8,10 @@
 
   <div class="gf-form-inline">
       <div class="gf-form">
-        <span class="gf-form-label query-keyword width-8">
-          Project
+        <span class="gf-form-label query-keyword width-9">
+          &nbsp;&nbsp;Namespace
           <info-popover mode="right-normal">
-            名字空间,表明监控数据所属产品,如"acs_ecs_dashboard","acs_rds_dashboard";支持自定义监控指标:acs_custom_$uid;          日志监控指标:acs_logMonitor_$uid.
+            名字空间,表明监控数据所属产品,如"acs_ecs_dashboard","acs_rds_dashboard";支持自定义监控指标:acs_custom_$uid;日志监控指标:acs_logMonitor_$uid.
           </info-popover>
         </span>
         <gf-form-dropdown model="ctrl.target.project"
@@ -21,7 +21,6 @@
           on-change="ctrl.onChangeInternal()"
           css-class="gf-size-auto">
         </gf-form-dropdown>
-        
       </div>
 
       <div class="gf-form">
@@ -53,7 +52,6 @@
           get-options="ctrl.getPeriod()"
           on-change="ctrl.onChangeInternal()"
           css-class="gf-size-auto">
-           
         </gf-form-dropdown>
       </div>
 
@@ -74,36 +72,37 @@
         </gf-form-dropdown>
       </div>
   </div>
- <div class="gf-form-inline">
-      <div class="gf-form">
-        <span class="gf-form-label query-keyword width-8">
-          Dimensions
-          <info-popover mode="right-normal">
-            监控数据维度,即实例Id;自定义监控需选择Group,手动输入目标维度值.
-          </info-popover>
-        </span>
-        <gf-form-dropdown model="ctrl.dimensions"
-          allow-custom="true"
-          lookup-text="true"
-          get-options="ctrl.getDimensions()"
-          on-change="ctrl.dimensionsPush(ctrl.dimensions)"
-          css-class="gf-size-auto">
-        </gf-form-dropdown>
-      </div>
 
-      <div class="gf-form">
-        <div ng-show="ctrl.target.dimensions != []" class="gf-form-label query-part" 
-                      ng-repeat="dimension in ctrl.target.dimensions track by $index">
+  <div class="gf-form-inline">
+    <div class="gf-form">
+      <span class="gf-form-label query-keyword width-9">
+        &nbsp;&nbsp;Dimensions
+        <info-popover mode="right-normal">
+          监控数据维度.样例:{"instanceId":"xx-xxxx";"device":"/xx/xx"},{"instanceId":"xx-xxxx";"state":"xxx"},{"instanceId":"xx-xxxx";"port":"xx";"vip":"0.0.0.0"}
+        </info-popover>
+      </span>
+      <gf-form-dropdown model="ctrl.dimensions"
+        allow-custom="true"
+        lookup-text="true"
+        get-options="ctrl.getDimensions()"
+        on-change="ctrl.dimensionsPush(ctrl.dimensions)"
+        css-class="gf-size-auto">
+      </gf-form-dropdown>
+    </div>
+
+    <div class="gf-form">
+      <div ng-show="ctrl.target.dimensions != []" class="gf-form-label query-part" 
+        ng-repeat="dimension in ctrl.target.dimensions track by $index">
           <a>{{dimension}}</a>
           <span class="pointer fa fa-remove" style="color:firebrick;" ng-click="ctrl.dimensionsSplice(dimension)"></span>
-        </div>
       </div>
+    </div>
   </div>
 
   <div class="gf-form-inline">
       <div class="gf-form">
-        <span class="gf-form-label query-keyword width-8">
-            Y - column 
+        <span class="gf-form-label query-keyword width-9">
+          &nbsp;&nbsp;Y - column 
           <info-popover mode="right-normal">
             统计目标,例如Average、Maximum.
           </info-popover>

@@ -1,4 +1,5 @@
 import _ from "lodash";
+import {Util} from './util.js';
 import {CmsSigner} from "./signer.js";
 
 export class GenericDatasource {
@@ -10,144 +11,157 @@ export class GenericDatasource {
     this.q = $q;
     this.backendSrv = backendSrv;
     this.templateSrv = templateSrv;
+    this.util = new Util(templateSrv);
     this.headers = {'Content-Type': 'application/json'};
+    this.cmsVersion = "2018-03-08";
+    this.ecsVersion = "2014-05-26";
+    this.ecsBasePath = "https://ecs.aliyuncs.com";
+    this.rdsVersion = "2014-08-15";
+    this.rdsBasePath = "https://rds.aliyuncs.com";
   }
 
   query(options){
-    let requests = []
-    let promise = Promise.resolve();
+    var requests = []
     var result =[];
-    _(options.targets).forEach(target => {
+    options.targets.forEach(target => {
         //非空参数判空处理
         if(!target.project || !target.metric || !target.ycol || !target.xcol){
           return;
         }
-        var project = target.project;
-        var metric = target.metric;
-        //默认数组
+        //默认数据
         var ycol = target.ycol;
         var xcol = target.xcol;
-        var describe = target.describe;
-        if(!describe){
-          describe = '';
+        var describe = !target.describe ? target.describe : target.describe +".";
+        //处理模版
+        var project = this.util.exists(target.project) ? this.util.resolve(target.project, {}):target.project;
+        var metric = this.util.exists(target.metric) ? this.util.resolve(target.metric, {}):target.metric;
+        var period = this.util.exists(target.period) ? this.util.resolve(target.period, {}):target.period;
+        var group = this.util.exists(target.group) ? this.util.resolve(target.group, {}):target.group;
+        //处理数组模版
+        var dimensions = "";
+        var dimensions_varabiles = [];
+        
+        target.dimensions.forEach(dimension => {
+            this.util.exists(dimension) ? dimensions_varabiles.push(this.util.resolve(dimension, {})) : dimensions_varabiles.push(dimension)
+        });
+        var ycol_varabiles = [];
+        ycol.forEach(y_col => {
+          y_col.indexOf("$") != -1 ? ycol_varabiles.push(this.util.resolve(y_col, {})) : ycol_varabiles.push(y_col)
+        });
+        ycol = ycol_varabiles.length > 0 ? ycol_varabiles : ycol;
+        
+        //自定义监控(acs_custom)、日志监控(acs_logMonitor)处理,只取下标为0的数据
+        if(project.indexOf("acs_custom") != -1 || project.indexOf("acs_logMonitor") != -1){
+          var dimensionAcsJson = target.dimensions[0];
+          var dimensionAcsObj = {"groupId":group.toString(),
+                          "dimension":dimensionAcsJson.replace(/\&/gi, '%26').replace(/\{/gi, '%7B').replace(/\}/gi, '%7D')};
+          dimensions = JSON.stringify(dimensionAcsObj);
         }else{
-          describe = describe +".";
-        }
-        var query ="/?Action=QueryMetricList&Length=2000";
-        var dimensions ="";
-        var period = target.period;
-        var group = target.group
-        if(!period){
-          period = '';
-        }
-        if(!group){
-          group = '';
-        }
-        //定义Promise元数据
-        let request = this.getDimensionsByGroup(group,project).then(response=>{
-          // console.log(JSON.stringify(response));
-          //处理group--根据GroupId获取该组下的所有实例Id
-          if('200' == response.code && response.data.length > 0){
-              var data = response.data;
-              dimensions = dimensions.concat(JSON.stringify(data));
-          }else{
-            dimensions = '';
-          }
-          //自定义监控(acs_custom)、日志监控(acs_logMonitor)自动取消分组功能
-          if(project.indexOf("acs_custom") == -1 || project.indexOf("acs_logMonitor") == -1){
-            dimensions = '';
-          }
-        }).then(()=>{
-          //GroupId存在的同时,dimensions存在,则dimensions覆盖Group下的所有实例Id，以dimensions为准
-          if(target.dimensions.length == 0){
-             dimensions = dimensions;
-          }else{
-            //自定义监控(acs_custom)、日志监控(acs_logMonitor)处理
-            // console.log(project.indexOf("acs_custom") == -1);
-            // console.log(project.indexOf("acs_logMonitor") == -1);
-            if(project.indexOf("acs_custom") != -1 || project.indexOf("acs_logMonitor") != -1){
-              var dimensionAcsJson = target.dimensions[0];
-              var dimensionAcsObj = {"groupId":group.toString(),
-                              "dimension":dimensionAcsJson.replace(/\&/gi, '%26').replace(/\{/gi, '%7B').replace(/\}/gi, '%7D')};
-              dimensions = JSON.stringify(dimensionAcsObj);
-            }else{
-              //数组对象
-              var dimensionArray =[];
-              var dimensionJson = target.dimensions;
-              var i = dimensionJson.length;
-              while (i--) {
-                dimensionArray.push({"instanceId":dimensionJson[i]});
+          //正常数据
+          dimensions = ""
+          dimensions_varabiles.forEach((dimension,i) =>{
+            if(typeof dimension == "string"){
+              dimension = dimension.includes("{") ? dimension :  "{" + dimension;
+              dimension = dimension.includes("}") ? dimension : dimension + "}";
+
+              dimensions += dimension;
+              if(i != dimensions_varabiles.length - 1){
+                dimensions += ","
               }
-              dimensions ='';
-              dimensions =dimensions.concat(JSON.stringify(dimensionArray));
+            }else{
+              dimension.forEach(dimension_i =>{
+                dimension_i = dimension_i.includes("{") ? dimension_i : "{" + dimension_i;
+                dimension_i = dimension_i.includes("}") ? dimension_i : dimension_i + "}";
+
+                dimensions += dimension_i;
+                if(i != dimensions_varabiles.length - 1){
+                  dimensions += ","
+                }
+              })
             }
-          }
-          //拼接查询参数
-          var queryConcat= query + "&Project="+project+"&Metric="+metric+
-                                        "&Period="+period+"&Dimensions="+dimensions+
-                                        "&StartTime="+(parseInt(options.range.from._d.getTime()))+
-                                        "&EndTime="+(parseInt(options.range.to._d.getTime())) ;
-          var param = {
-              path: queryConcat,
-              method: "GET"
-          };
-          // 签名已拼接的待查询URL
-          query = this.buildRealUrl(param);
-          // console.log("查看query的值："+query);
-          if (_.isEmpty(query)) {
-              var d = this.q.defer();
-              d.resolve({data: []});
-              return d.promise;
-          } 
-          // 根据URL发起请求
-          return this.backendSrv.datasourceRequest({
-              url: query,
-              method: 'GET',
-              headers: this.headers
-          }).then(response => {
-            if(response.status == '200' && response.data.Code == '200'){
-              // 处理返回结果 (需优化)
-              var resResult = [];
-              // 解析返回的Datapoints数据集
-              var dataDatapoints = angular.fromJson(response.data.Datapoints);
-              // console.log("长度"+dataDatapoints.length);
-              // console.log(JSON.stringify(dataDatapoints));
-              // 处理Grafana所需的target值
-              var i = ycol.length;
-              // 处理Target组的所需返回结果集
-              while (i--) {
-                var datapoints = [];
-                var ycolTarget = ycol[i];
-                // console.log(ycolTarget);
-                // console.log(xcol);
-                // 封装返回目标的第一层数组值
-                _.each(dataDatapoints, Datapoint => {
-                    let datapoint = [];
+          })
+          dimensions = "[" + dimensions + "]"
+          dimensions = dimensions.replace(/\&/gi, '%26').replace(/\{/gi, '%7B').replace(/\}/gi, '%7D');
+        }
+        //拼接url参数
+        var queryConcat = "/?Action=QueryMetricList&Length=90000&Project=" + project + "&Metric=" + metric + "&Period=" + period + 
+                        "&Dimensions=" + dimensions + "&StartTime=" + (parseInt(options.range.from._d.getTime())) +
+                        "&EndTime=" + (parseInt(options.range.to._d.getTime()));
+        var param = {
+            path: queryConcat,
+            method: "GET"
+        };
+        // 签名已拼接的待查询URL
+        var query = this.buildRealUrl(param);
+        if (_.isEmpty(query)) {
+            var d = this.q.defer();
+            d.resolve({data: []});
+            return d.promise;
+        } 
+        //定义Promise元数据、根据URL发起请求
+        var request = this.backendSrv.datasourceRequest({
+          url: query,
+          method: 'GET',
+          headers: this.headers
+        }).then(response => {
+          if(response.status == '200' && response.data.Code == '200'){
+            var resResult = [];
+            var dataDatapoints = angular.fromJson(response.data.Datapoints);
+            //处理数据分类
+            var target_datapoints = [];
+            if(dimensions.includes("instanceId")){
+              for(var i in dataDatapoints){
+                if (!target_datapoints[dataDatapoints[i].instanceId]) {
+                  var arr = [];
+                  arr.push(dataDatapoints[i]);
+                  target_datapoints[dataDatapoints[i].instanceId] = arr;
+                }else{
+                  target_datapoints[dataDatapoints[i].instanceId].push(dataDatapoints[i]);
+                }
+              }
+            }
+            // 处理Grafana所需的target值、Target组的所需返回结果集
+            ycol.map(ycolTarget => {
+              if(dimensions.includes("instanceId")){
+                for(var i in target_datapoints){
+                  var datapoints = [];
+                  target_datapoints[i].forEach(Datapoint=>{
+                    var datapoint = [];
                     datapoint.push(Datapoint[ycolTarget], Datapoint[xcol]);
                     // 封装返回目标的第二层数组值
                     datapoints.push(datapoint);
-                });
+                  })
+                  // 封装返回目标的第三层数组值
+                  resResult.push({
+                    "target": describe + i + "." + ycolTarget,
+                    "datapoints": datapoints
+                  });
+                };
+              }else{
+                var datapoints = [];
+                dataDatapoints.forEach(Datapoint=>{
+                  var datapoint = [];
+                  datapoint.push(Datapoint[ycolTarget], Datapoint[xcol]);
+                  // 封装返回目标的第二层数组值
+                  datapoints.push(datapoint);
+                })
                 // 封装返回目标的第三层数组值
                 resResult.push({
-                   "target": describe + ycolTarget,
-                   "datapoints": datapoints
+                  "target": describe + ycolTarget,
+                  "datapoints": datapoints
                 });
-                // console.log(JSON.stringify(resResult));
               }
-              // 转对象封装
-              result = result.concat(typeof resResult == 'string' ? JSON.parse(resResult) : resResult);
-            }
-          }).catch(function (error) {
-            console.log(error);
-          });
+            });
+            // 转对象封装
+            result = result.concat(typeof resResult == 'string' ? JSON.parse(resResult) : resResult);
+          }
+        }).catch(function (error) {
+          console.log(error);
         });
         requests.push(request);
       })
-    // 统一单独处理返回值(可优化)
-    return Promise.all(requests.map(p => p.catch(e => e)))
-            .then(requests => {
-              return {data: result};
-            });
+    // 统一单独处理返回值
+    return Promise.all(requests.map(p => p.catch(e => e))).then(() => { return {data: result}; });
   } 
 
   // 测试连接数据源接口
@@ -160,7 +174,6 @@ export class GenericDatasource {
           url: this.buildRealUrl(param),
           method: 'GET'
       }).then(response => {
-          // console.log(response);
           var data = response.data;
           if (data.ErrorCode == 200 && data.Success == true ) {
               return {status: "success", message: "Data source is working", title: "Success"};
@@ -171,37 +184,155 @@ export class GenericDatasource {
   annotationQuery(options){
 
   } 
+
   metricFindQuery(options){
-
-  }
-
-  // 根据阿里监控API文档处理URL签名,做封装调用接口用
-  buildRealUrl(param) {
-      var signer = new CmsSigner({
-          accessKeyId: this.jsonData.cmsAccessKey,
-          secretAccessKey: this.jsonData.cmsSecretKey
-      }, param);
-      signer.addAuthorization();
-      return this.basePath + signer.request.path;
-  }
-
-  //将数组处理成Map对象集 
-  mapToTextValue(result) {
-    return _.map(result, (d, i) => {
-      if (d && d.text && d.value) {
-        return { text: d.text, value: d.value };
-      } else if (_.isObject(d)) {
-        return { text: d, value: i};
+      var result = []
+      //接受一个参数
+      var namespacesQuery = options.match(/^namespaces\(([^\)]+?)(,\s?([^,]+?))?\)/);
+      namespacesQuery = namespacesQuery == null ? options.match(/^namespace\(([^\)]+?)(,\s?([^,]+?))?\)/) : namespacesQuery;
+      if(namespacesQuery != null){
+        var filter = this.util.templateToStr(namespacesQuery[1]);
+        return this.getProject().then(namespaces => {
+          result = namespaces
+          if(!this.isEmpty(filter)){
+            result = []
+            namespaces.map(namespace =>{
+              if(namespace.text.includes(filter)){
+                result.push(namespace)
+              }
+            })
+          }
+          return result;
+        })
       }
-      return { text: d, value: d };
-    });
+      
+      //接受二个参数
+      var metricsQuery = options.match(/^metrics\(([^,]+?),\s?([^,]+?)\)/);
+      metricsQuery = metricsQuery == null ? options.match(/^metric\(([^,]+?),\s?([^,]+?)\)/) : metricsQuery;
+      if(metricsQuery != null){
+        var namespace = this.util.templateToStr(metricsQuery[1]);
+        var filter = this.util.templateToStr(metricsQuery[2]);
+
+        result = []
+        return this.getMetrics(namespace).then(metrics => {
+          result = metrics
+          if(!this.isEmpty(filter)){
+            result = []
+            metrics.map(metric =>{
+              if(metric.text.includes(filter)){
+                result.push(metric)
+              }
+            })
+          }
+          return result;
+        })
+      }
+
+      //接受四个参数，过滤Tag提供key、value选择
+      var tagFilterQuery = options.match(/^tagFilter\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/);
+      tagFilterQuery = tagFilterQuery == null ? options.match(/^tagsFilter\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/) : tagFilterQuery;
+      if(tagFilterQuery != null){
+        var type = this.util.templateToStr(tagFilterQuery[1]);
+        var regionId = this.util.templateToStr(tagFilterQuery[2]);
+        var tagType = this.isEmpty(tagFilterQuery[3]) ? "" : tagFilterQuery[3];
+        var tagKey = this.isEmpty(tagFilterQuery[4]) ? "" : tagFilterQuery[4];
+        var path = "/?Action=DescribeTags&RegionId="+regionId;
+        var nextToken = "";
+        result = [];
+        return this.tagsFilter(type.toUpperCase(), nextToken, path, tagType, tagKey).then(tagsList => {
+          return this.util.arrayToMap(tagsList);
+        })
+      }
+
+      //接受四个参数,暂不支持数组，提供dimensions选择
+      var dimensionsQuery = options.match(/^dimension\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/);
+      dimensionsQuery = dimensionsQuery == null ? options.match(/^dimensions\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/) : dimensionsQuery;
+      if(dimensionsQuery != null){
+        var namespace = this.util.templateToStr(dimensionsQuery[1]);
+        var metric =this.util.templateToStr(dimensionsQuery[2]);
+
+        var instanceId = dimensionsQuery[3]
+        var instanceId_array = this.util.exists(instanceId) ? this.util.resolve(instanceId, {}):[];
+        if(instanceId_array.length == 0){
+          if(this.isEmpty(instanceId)){
+            instanceId_array = [];
+          }else{
+            instanceId_array = this.util.strToArray(instanceId);
+          }
+        }
+        var filter = dimensionsQuery[4]
+        var filter_array = this.util.exists(filter) ? this.util.resolve(filter, {}):[];
+        if(filter_array.length == 0){
+          if(this.isEmpty(filter)){
+            filter_array = [];
+          }else{
+            filter_array = this.util.strToArray(filter);
+          }
+        }
+        result = []
+        return this.getDimensions(namespace, metric, "", []).then(dimensions => {
+          var is_instanceId_bool = this.isEmpty(instanceId);
+          var is_filter_bool = this.isEmpty(filter);
+          if(is_instanceId_bool){
+            result = dimensions;
+          }else{
+            var instanceId_result = [];
+            dimensions.map(dimension => {
+              instanceId_array.forEach(i => {
+                if(dimension.text.includes(i)){
+                  instanceId_result.push(dimension);
+                }
+              })
+            })
+            if(is_filter_bool){
+              result = instanceId_result
+            }else{
+              instanceId_result.map(dimension =>{
+                filter_array.forEach( i => {
+                  if(dimension.text.includes(i)){
+                    result.push(dimension)
+                  }
+                })
+              })
+            }
+          }
+          return result;
+        })
+      }
+
+      //接受5个参数,暂不支持数组，提供tag选择
+      var tagQuery = options.match(/^tag\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/);
+      tagQuery = tagQuery == null ? options.match(/^tags\(([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?),\s?([^,]+?)(,\s?(.+))?\)/) : tagQuery;
+      if(tagQuery != null){
+        var resourceId = tagQuery[4];
+        var resourceId_array = this.util.exists(resourceId) ? this.util.resolve(resourceId, {}):[];
+        if(resourceId_array.length == 0){
+          if(this.isEmpty(resourceId)){
+            resourceId_array = [];
+          }else{
+            resourceId_array = [];
+            resourceId_array = this.util.strToArray(resourceId);
+          }
+        }
+        var tag = tagQuery[5];
+        var tag_array = this.util.exists(tag) ? this.util.resolve(tag, {}):[];
+        if(tag_array.length == 0){
+          if(this.isEmpty(tag)){
+            tag_array = [];
+          }else{
+            tag_array = [];
+            tag_array = this.util.strToArray(tag);
+          }
+        }
+        return this.listTagResources(tagQuery[1].toUpperCase(), tagQuery[2], tagQuery[3], resourceId_array, tag_array);
+      }
+      return []
   }
 
-  //返回所有的Project TODO等API待优化  
-  // QueryProjectMeta的API无自定义监控project、日志监控project，待确认是否拼接
+  //返回所有的Project,QueryProjectMeta的API无自定义监控project、日志监控project，已拼接
   getProject(){
     var param = {
-        path: "/?Action=QueryProjectMeta&PageNumber=1&PageSize=100",
+        path: "/?Action=QueryProjectMeta&PageNumber=1&PageSize=1000",
         method: "GET"
     };
     return this.backendSrv.datasourceRequest({
@@ -211,20 +342,12 @@ export class GenericDatasource {
         var result =[];
         var data = response.data;
         if (data.ErrorCode == 200 && data.Success == true) {
-          // console.log(JSON.stringify(data));
-          var projectArray = data.Resources.Resource;
-          // console.log(JSON.stringify(projectArray));
-          var i = projectArray.length;
-          // console.log(i);
-          while (i--) {
-            var projectInfo = projectArray[i];
-            // console.log(projectInfo);
-            var project =[];
-            project.push(projectInfo.Project);
-            result.push(project);
-          }
+          data.Resources.Resource.map(resource =>{
+            if(!this.isEmpty(resource.Project)){
+              result.push(resource.Project);
+            }
+          })
         }
-        // console.log(this.jsonData.uid);
         //增加自定义监控、日志监控选项
         var acs_param = {
             path: "/?Action=AccessKeyGet",
@@ -236,16 +359,10 @@ export class GenericDatasource {
         }).then(response => {
           var data = response.data;
           if (data.ErrorCode == 200 && data.Success == true ) {
-              var projectAcsLog =[];
-              projectAcsLog.push("acs_logMonitor_"+data.UserId);
-              result.push(projectAcsLog);
-              var projectAcsCustom =[];
-              projectAcsCustom.push("acs_customMetric_"+data.UserId);
-              result.push(projectAcsCustom);
+              result.push("acs_logMonitor_" + data.UserId);
+              result.push("acs_customMetric_" + data.UserId);
           }
-          return _.map(result, (d, i) => {
-            return { text: d, value: d};
-          });
+          return this.util.arrayToMap(result);
         });
     }).catch(function (error) {
       console.log(error);
@@ -253,10 +370,10 @@ export class GenericDatasource {
     });
   }
 
-  //根据Project返回对应的所有的Metrics 无自定义监控project、日志监控project对应的Metrics TODO等API待优化
+  //根据Project返回对应的所有的Metrics,无自定义监控、日志监控project对应的Metrics
   getMetrics(project){
     var param = {
-        path: "/?Action=QueryMetricMeta&PageNumber=1&PageSize=150&Project=" + project,
+        path: "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1000&Project=" + project,
         method: "GET"
     };
     return this.backendSrv.datasourceRequest({
@@ -266,21 +383,12 @@ export class GenericDatasource {
         var data = response.data;
         if (data.ErrorCode == 200 && data.Success == true) {
           var result =[];
-          // console.log(JSON.stringify(data));
-          var resource = data.Resources.Resource;
-          // console.log(JSON.stringify(projectArray));
-          var i = resource.length;
-          // console.log(i);
-          while (i--) {
-            var resourceInfo = resource[i];
-            // console.log(projectInfo);
-            var metric =[];
-            metric.push(resourceInfo.Metric);
-            result.push(metric);
-          }
-          return _.map(result, (d, i) => {
-            return { text: d, value: d};
-          });
+          data.Resources.Resource.map(resource =>{
+            if(!this.isEmpty(resource.Metric)){
+              result.push(resource.Metric);
+            }
+          })
+          return this.util.arrayToMap(result);
         }
     }).catch(function (error) {
       console.log(error);
@@ -288,7 +396,7 @@ export class GenericDatasource {
     });
   }
 
-  //根据Project及Metrics返回对应的所有的Period 无自定义监控project、日志监控project对应的Period,TODO等API待优化
+  //根据Project及Metrics返回对应的所有的Period,无自定义监控、日志监控project对应的Period
   getPeriod(project,metric){
     var param = {
         path: "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project="+ project + "&Metric=" + metric,
@@ -300,15 +408,12 @@ export class GenericDatasource {
     }).then(response => {
         var data = response.data;
         if (data.ErrorCode == 200 && data.Success == true) {
-          var result =[];
           var period = [];
           var resource = data.Resources.Resource;
-          if(resource.length == 0 || !resource[0].Periods ){
-            return this.mapToTextValue(period);
+          if(resource.length > 0 && !this.isEmpty(resource[0].Periods)){
+            period =resource[0].Periods.split(",");
           }
-          period =resource[0].Periods.split(",");
-          // console.log(period);
-          return this.mapToTextValue(period);
+          return this.util.arrayToMap(period);
         }
     }).catch(function (error) {
       console.log(error);
@@ -316,8 +421,8 @@ export class GenericDatasource {
     });
   }
 
-  //根据Project及Metrics返回对应的所有的Statistics，未处理去除已选项 自定义监控无处理
-  getStatistics(project,metric,ycol){
+  //根据Project及Metrics返回对应的所有的Statistics,未去除已选项,无自定义监控、日志监控project对应的Period
+  getStatistics(project,metric){
     var param = {
         path: "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" + project + "&Metric=" + metric,
         method: "GET"
@@ -328,14 +433,12 @@ export class GenericDatasource {
     }).then(response => {
         var data = response.data;
         if (data.ErrorCode == 200 && data.Success == true) {
-          var result =[];
           var statistics=[];
           var resource = data.Resources.Resource;
-          if(resource.length == 0 || !resource[0].Statistics){
-            return this.mapToTextValue(statistics);
+          if(resource.length > 0 && !this.isEmpty(resource[0].Statistics)){
+            statistics = resource[0].Statistics.split(",");
           }
-          statistics = resource[0].Statistics.split(",");
-          return this.mapToTextValue(statistics);
+          return this.util.arrayToMap(statistics);
         }
     }).catch(function (error) {
       console.log(error);
@@ -343,10 +446,10 @@ export class GenericDatasource {
     });
   }
 
-  //返回所有的Groups
+  //返回所有的Groups,自定义监控、日志使用
   getGroups(){
     var param = {
-        path: "/?Action=ListMyGroups&PageNumber=1&PageSize=1000" ,
+        path: "/?Action=ListMyGroups&PageNumber=1&PageSize=9000",
         method: "GET"
     };
     return this.backendSrv.datasourceRequest({
@@ -361,7 +464,12 @@ export class GenericDatasource {
         while (i--) {
             var group = resource[i];
             var groupInfo =[];
-            groupInfo.push(group.GroupId,group.GroupName +" / " + group.GroupId);
+            var groupId = group.GroupId;
+            var groupName = group.GroupName;
+            if(this.isEmpty(groupId) || this.isEmpty(groupName)){
+               continue;
+            }
+            groupInfo.push(groupId,groupName + " / " + groupId);
             result.push(groupInfo);
         }
         return _.map(result, (d, i) => {
@@ -374,141 +482,286 @@ export class GenericDatasource {
     });
   }
 
-  //返回所有的Dimensions 自定义监控无处理
-  // -- 如果有应用分组Id则根据该值查询该组下所有的Dimensions
-  // -- 如果无应用分组Id则根据查询该账户下所有的Dimensions
-  getDimensions(project,metric,group,dimensions,period,query){
-    var result =[];
-    if(!group || typeof group == 'string'){
-        group = 0;
-    }
-    if(isNaN(parseInt(group))){
-        group = 0;
-    }
+  getDimensions(project,metric,period,dimensions){
     if(project.indexOf("acs_customMetric") != -1 || project.indexOf("acs_logMonitor") != -1){
       return;
     }
-    if(group !=0){
-      var param = {
-          path: "/?Action=ListMyGroupInstances&PageNumber=1&PageSize=1000&GroupId=" + parseInt(group),
-          method: "GET"
-      };
-      return this.backendSrv.datasourceRequest({
-          url: this.buildRealUrl(param),
-          method: 'GET'
-      }).then(response => {
-        // console.log(JSON.stringify(response));
-        var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true){
-          var resource = data.Resources.Resource;
-
-          var i = resource.length;
-          while (i--) {
-              var instance = resource[i];
-              var instanceInfo =[];
-              //判断空对象处理
-              if(!instance.InstanceId){
-                continue;
-              }
-              // 去掉页面已选择实例
-              if(_.includes(dimensions, instance.InstanceId)){
-                continue;
-              }
-              instanceInfo.push(instance.InstanceId);
-              result.push(instanceInfo);
-          }
-          return _.map(result, (d, i) => {
-            return { text: d, value: d};
-          });
-        }
-      }).catch(function (error) {
-        console.log(error);
-        return;
-      });
-    }else{
-      var endTime = new Date().getTime();
-      var startTime = endTime - 1 * 60 * 60 * 1000;
-      var param = {
-          path: "/?Action=QueryMetricLast&Page=1&Length=1000&Period="+period+"&Project=" 
-                              + project + "&Metric=" + metric + "&StartTime=" + startTime + "&EndTime=" + endTime,
-          method: "GET"
-      };
-      return this.backendSrv.datasourceRequest({
-          url: this.buildRealUrl(param),
-          method: 'GET'
-      }).then(response => {
-        var data = response.data;
-        // console.log(JSON.stringify(data));
-        var datapoints = JSON.parse(data.Datapoints);
-        // console.log(JSON.stringify(datapoints));
-        var i = datapoints.length;
-        if (i >0) {
-          while (i--) {
-              var datapoint = datapoints[i];
-              var datapointInfo =[];
-              //判断空对象处理
-              if(!datapoint.instanceId){
-                continue;
-              }
-              // 去掉页面已选择实例
-              if(_.includes(dimensions, datapoint.instanceId)){
-                continue;
-              }
-              datapointInfo.push(datapoint.instanceId);
-              result.push(datapointInfo);
-          }
-          return _.map(result, (d, i) => {
-            return { text: d, value: d};
-          });
-        }
-      }).catch(function (error) {
-        console.log(error);
-        return;
-      });
-    }
-  }
-
-  // 根据应用分组Id返回该组下所有的Dimensions 
-  getDimensionsByGroup(group){
     var result =[];
-    if(!group || typeof group == 'string'){
-        group = 0;
-    }
-    if(isNaN(parseInt(group))){
-        group = 0;
-    }
+    var endTime = new Date().getTime();
+    var startTime = endTime - 1 * 60 * 60 * 1000;
     var param = {
-        path: "/?Action=ListMyGroupInstances&PageNumber=1&PageSize=1000&GroupId=" + parseInt(group),
+        path: "/?Action=QueryMetricLast&Page=1&Length=90000&Period="+period+"&Project=" 
+              + project + "&Metric=" + metric + "&StartTime=" + startTime + "&EndTime=" + endTime,
         method: "GET"
     };
     return this.backendSrv.datasourceRequest({
         url: this.buildRealUrl(param),
         method: 'GET'
     }).then(response => {
-      var dimensions = [];
       var data = response.data;
-      if (data.ErrorCode == 200 && data.Success == true) {
-        var resource = data.Resources.Resource;
-        var i = resource.length;
-        while (i--) {
-            var instance = resource[i];
-            dimensions.push({"instanceId":instance.InstanceId});
-        }
-        result = result.concat(typeof dimensions == 'string' ? JSON.parse(dimensions) : dimensions);
-        return {data:result,code:'200'};
-      }else{
-        return {data:result,code:'400'};
+      if(data.Success == false){
+          return;
       }
+      // 构建可选参数dimensions
+      param = {
+        path: "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" + project + "&Metric=" + metric,
+        method: "GET"
+      };
+      return this.backendSrv.datasourceRequest({
+          url: this.buildRealUrl(param),
+          method: 'GET'
+      }).then(response_meta => {
+          var data_meta = response_meta.data;
+          if (data_meta.ErrorCode == 200 && data_meta.Success == true) {
+            var resource = data_meta.Resources.Resource;
+            if(resource.length == 0 || this.isEmpty(resource[0].Dimensions)){
+              return;
+            }
+            var dimension = resource[0].Dimensions.split(",");
+            var datapoints = JSON.parse(data.Datapoints);
+            datapoints.map(datapoint =>{
+              var datapointInfo = "{\"";
+              dimension.forEach(function(value,index){
+                value = value.replace(/"/g,"");
+                if(value != "userId"){
+                  datapointInfo += value +"\":\""+datapoint[value] +"\"";
+                  if(index == dimension.length - 1){
+                    datapointInfo +="}";
+                  }else{
+                    datapointInfo +=";\"";
+                  }
+                }
+              });
+              //去重
+              if(result.length == 0){
+                if(dimensions.length == 0){
+                  result.push(datapointInfo);
+                }else if(dimensions.length > 0 && !dimensions.includes(datapointInfo)){
+                  result.push(datapointInfo);
+                }
+              }else if(result.length > 0 && !result.includes(datapointInfo)){
+                if(dimensions.length == 0){
+                  result.push(datapointInfo);
+                }else if(dimensions.length > 0 && !dimensions.includes(datapointInfo)){
+                  result.push(datapointInfo);
+                }
+              }
+            })
+            return this.util.arrayToMap(result);
+        }
+      });
     }).catch(function (error) {
       console.log(error);
-      return {data:result,code:'400'};
+      return;
     });
   }
 
-  isNotEmpty(obj) { // 判断对象是否为空对象
-    for (var name in obj) {
-        return true;
-    } // 不为空
-    return false; // 为空
+  // 暂时无翻页功能,无nextToken字段返回
+  tagsFilter(type, nextToken, path, tagType, tagKey) {
+    var reqUrl = path;
+    if(!this.isEmpty(nextToken)){
+      reqUrl += "&NextToken=" + nextToken;
+    }
+    var param = {
+      path: reqUrl,
+      method: "GET"
+    };
+    var realUrl = "";
+    if("ECS" == type){
+      realUrl = this.buildECSRealUrl(param);
+      return this.backendSrv.datasourceRequest({
+        url: realUrl,
+        method: 'GET'
+      }).then(response => {
+        var result =[];
+        var data = response.data;
+        var tags = data.Tags.Tag;
+        if(tags.length > 0){
+          tags.forEach(tag => {
+            if("key" == tagType){
+              if(!result.includes(tag.TagKey)){
+                result.push(tag.TagKey);
+              }
+            }else if("value" == tagType){
+              if(tag.TagKey == tagKey || tagKey == ""){
+                var value = tag.TagKey + ":/:" + tag.TagValue
+                if(!result.includes(value)){
+                  result.push(value);
+                }
+              }
+            }
+          });
+        }
+        return result;
+      })
+    }else if("RDS" == type){
+      realUrl = this.buildRDSRealUrl(param);
+      return this.backendSrv.datasourceRequest({
+        url: realUrl,
+        method: 'GET'
+      }).then(response => {
+        var result =[];
+        var data = response.data;
+        var tags = data.Items.TagInfos;
+        if(tags.length > 0){
+          tags.forEach(tag => {
+            if("key" == tagType){
+              if(!result.includes(tag.TagKey)){
+                result.push(tag.TagKey);
+              }
+            }else if("value" == tagType){
+              if(tag.TagKey == tagKey || tagKey == ""){
+                var value = tag.TagKey + ":/:" + tag.TagValue
+                if(!result.includes(value)){
+                  result.push(value);
+                }
+              }
+            }
+          });
+        }
+        return result;
+      })
+    }
+  }
+
+  listTagResources(type, regionId, resourceType, resourceId, tag){
+    type = this.isEmpty(type) ? "ECS" : type;
+    regionId = this.isEmpty(regionId) ? "cn-hangzhou" : regionId;
+    if("ECS" == type){
+      resourceType = this.isEmpty(resourceType) ? "instance" : resourceType;
+    }else if("RDS" == type){
+      resourceType = this.isEmpty(resourceType) ? "INSTANCE" : resourceType;
+    }
+    var path = "/?Action=ListTagResources&RegionId="+regionId+"&ResourceType=" + resourceType;
+    for(var i = 0; i < resourceId.length; i++){
+      if(50 > i){
+        var v = resourceId[i];
+        if(!this.isEmpty(v)){
+          path += "&ResourceId." + (parseInt(i) + 1).toString() + "=" + v;
+        }
+      }
+    }
+    var tag_key_array = [];
+    var tag_value_array = [];
+    tag.forEach(t =>{
+      if(!this.isEmpty(t)){
+        if(t.indexOf(":/:") != -1){
+          var t_split = t.split(":/:");
+          if(!tag_key_array.includes(t_split[0])){
+            tag_key_array.push(t_split[0]);  
+          }
+          if(!tag_value_array.includes(t_split[1])){
+            tag_value_array.push(t_split[1]);
+          }
+        }
+      }
+    });
+    if(tag_key_array.length > 0){
+      for(var i = 0; i < tag_key_array.length; i++){
+        var key = tag_key_array[i];
+        path += "&Tag." + (parseInt(i) + 1).toString() + ".Key=" + key;
+      }
+    }else if(tag_key_array.length == 0 && tag.length > 0){
+      for(var i = 0; i < tag.length; i++){
+        var key = tag[i];
+        path += "&Tag." + (parseInt(i) + 1).toString() + ".Key=" + key;
+      }
+    }
+    var nextToken = "";
+    return this.tagList(type, nextToken, path, tag_value_array).then(rep =>{
+      var distinct_result = []
+      rep.forEach(instanceId =>{
+        if(!distinct_result.includes(instanceId)){
+          distinct_result.push(instanceId);
+        }
+      })
+      return this.util.arrayToMap(distinct_result);
+    });
+  }
+  // 处理nextToken问题
+  tagList(type, nextToken, path, tag_value_array) {
+    var reqUrl = path;
+    if(!this.isEmpty(nextToken)){
+      reqUrl += "&NextToken=" + nextToken;
+    }
+    var param = {
+      path: reqUrl,
+      method: "GET"
+    };
+    var realUrl = "";
+    if("ECS" == type){
+      realUrl = this.buildECSRealUrl(param);
+    }else if("RDS" == type){
+      realUrl = this.buildRDSRealUrl(param);
+    }
+    return this.backendSrv.datasourceRequest({
+      url: realUrl,
+      method: 'GET'
+    }).then(response => {
+      var result =[];
+      var data = response.data;
+      var tagResource = data.TagResources.TagResource;
+      if(tagResource.length > 0){
+        tagResource.forEach(resource => {
+          if(tag_value_array.length > 0){
+            if(tag_value_array.includes(resource.TagValue)){
+              result.push(resource.ResourceId);
+            }
+          }else {
+            result.push(resource.ResourceId);
+          }
+        })
+      };
+      if(this.isEmpty(data.NextToken)){
+        return result;
+      }else{
+        return this.tagList(type, data.NextToken, path, tag_value_array).then(nextList =>{
+          return result.concat(nextList);
+        });
+      }
+    })
+  }
+
+  // 根据云监控API文档处理URL签名,做封装调用接口用
+  buildRealUrl(param) {
+    var signer = new CmsSigner({
+        accessKeyId: this.util.base64_decode(this.jsonData.cmsAccessKey),
+        secretAccessKey: this.util.base64_decode(this.jsonData.cmsSecretKey),
+        version: this.cmsVersion
+    }, param);
+    signer.addAuthorization();
+    return this.basePath + signer.request.path;
+  }
+
+  // 根据ECS API文档处理URL签名,做封装调用接口用
+  buildECSRealUrl(param){
+    var signer = new CmsSigner({
+        accessKeyId: this.util.base64_decode(this.jsonData.cmsAccessKey),
+        secretAccessKey: this.util.base64_decode(this.jsonData.cmsSecretKey),
+        version: this.ecsVersion
+    }, param);
+    signer.addAuthorization();
+    return this.ecsBasePath + signer.request.path;
+  }
+
+  // 根据RDS API文档处理URL签名,做封装调用接口用
+  buildRDSRealUrl (param){
+    var signer = new CmsSigner({
+        accessKeyId: this.util.base64_decode(this.jsonData.cmsAccessKey),
+        secretAccessKey: this.util.base64_decode(this.jsonData.cmsSecretKey),
+        version: this.rdsVersion
+    }, param);
+    signer.addAuthorization();
+    return this.rdsBasePath + signer.request.path;
+  }
+  
+  // 判断对象是否为空对象 true 空 
+  isEmpty(obj) { 
+    var re = new RegExp("^[ ]+$");
+    if(!obj || obj == "null" || obj == null || obj == " " || obj == "" 
+      || obj == '""' || re.test(obj) || typeof(obj) == "undefined"){
+      return true
+    }// 为空
+    return false; // 不为空
   }
 }

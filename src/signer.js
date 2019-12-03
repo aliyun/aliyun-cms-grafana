@@ -11,7 +11,7 @@ export class CmsSigner {
         var date = new Date();
         var globalQuery = {
             'Format': 'JSON',
-            'Version': '2018-03-08',
+            'Version': this.credentials.version,
             'AccessKeyId': this.credentials.accessKeyId,
             'SignatureMethod': 'HMAC-SHA1',
             'SignatureVersion': '1.0',

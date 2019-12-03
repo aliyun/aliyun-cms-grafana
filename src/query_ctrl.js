@@ -1,11 +1,13 @@
 import {QueryCtrl} from 'app/plugins/sdk';
+import {Util} from './util.js';
 import './css/query-editor.css!'
 
 export class GenericDatasourceQueryCtrl extends QueryCtrl {
 
-  constructor($scope, $injector)  {
-    super($scope, $injector);
+  constructor($scope, $injector, templateSrv)  {
+    super($scope, $injector,templateSrv);
     this.scope = $scope;
+    this.util = new Util(templateSrv);
     this.target.type = this.target.type || 'timeserie';
     this.target.target = this.target.ycol;
     this.target.describe = this.target.describe;
@@ -16,7 +18,6 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
     this.target.group = this.target.group;
     this.target.dimensions = this.target.dimensions || [];
     this.dimensions;
-    
     this.target.ycol = this.target.ycol || [];
     this.statistics;
 
@@ -35,21 +36,26 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
   getMetrics() {
     this.checkIsNull();
     if(this.target.project){
-      return this.datasource.getMetrics(this.target.project);
+      var project = this.util.exists(this.target.project) == true?this.util.resolve(this.target.project, {}):this.target.project;
+      return this.datasource.getMetrics(project);
     }
   }
 
   getPeriod() {
     this.checkIsNull();
     if(this.target.project && this.target.metric){
-      return this.datasource.getPeriod(this.target.project,this.target.metric);
+      var project = this.util.exists(this.target.project) == true?this.util.resolve(this.target.project, {}):this.target.project;
+      var metric = this.util.exists(this.target.metric) == true?this.util.resolve(this.target.metric, {}):this.target.metric;
+      return this.datasource.getPeriod(project,metric);
     }
   }
 
   getStatistics() {
     this.checkIsNull();
     if(this.target.project && this.target.metric){
-      return this.datasource.getStatistics(this.target.project,this.target.metric,this.target.ycol);
+      var project = this.util.exists(this.target.project) == true?this.util.resolve(this.target.project, {}):this.target.project;
+      var metric = this.util.exists(this.target.metric) == true?this.util.resolve(this.target.metric, {}):this.target.metric;
+      return this.datasource.getStatistics(project,metric);
     }
   }
 
@@ -82,7 +88,14 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
   getDimensions() {
     this.checkIsNull();
     if(this.target.project && this.target.metric){
-      return this.datasource.getDimensions(this.target.project,this.target.metric,this.target.group,this.target.dimensions,this.target.period);
+      var project = this.util.exists(this.target.project) == true?this.util.resolve(this.target.project, {}):this.target.project;
+      var metric = this.util.exists(this.target.metric) == true?this.util.resolve(this.target.metric, {}):this.target.metric;
+      var period = this.util.exists(this.target.period) == true?this.util.resolve(this.target.period, {}):this.target.period;
+      var dimensions = this.target.dimensions;
+      if(this.target.dimensions.indexOf("$") != -1){
+        dimensions=this.util.resolve(this.target.dimensions, {});
+      };
+      return this.datasource.getDimensions(project,metric,period,dimensions);
     }
   }
 
@@ -139,10 +152,8 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
       || re.test(this.target.group)){
       this.target.group = "";
     };
-    if(!this.target.dimensions || this.target.dimensions == "null" 
-      || this.target.dimensions == " " || this.target.dimensions == '""' 
-      || re.test(this.target.dimensions)){
-      this.target.dimensions = "";
+    if(this.target.dimensions.length < 1){
+      this.target.dimensions = [];
     }
     if(!this.dimensions || this.dimensions == "null" 
       || this.dimensions == " " || this.dimensions == '""' 
