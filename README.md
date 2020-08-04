@@ -63,8 +63,7 @@
     d.去除非自定义监控、日志监控下的Group筛选实例信息功能,即Group只适用于自定义监控、日志监控,不在提供过滤dimensions信息支持;
     e.优化dashboard数据展示,根据模版选定分条展示数据,暂只支持包含有instanceId的查询数据。
 ## 9、20191030更新内容：
-    a.AK输入验证增加BASE64加解密功能，防止明码AK。后续持续优化
-    b.增加tagFilter,tag方法,对ECS和RDS的打Tag标签对应的实例进行过滤:
+    a.增加tagFilter,tag方法,对ECS和RDS的打Tag标签对应的实例进行过滤:
         格式:
             tagFilter(type, regionId, tagType, tagKey),
             tags(type, regionId, resourceType, resourceId_array, tag_array);
@@ -84,3 +83,11 @@
                     tag(rds, cn-beijing, INSTANCE, ["instanceId_1","instanceId_2"], ["key1:/:value1","key2:/:value2"]);
                 resourceId_array,tag_array支持variables语法,与tagFilter配合使用,效果更好,tagFilter支持分组模式,更好的使用Tag的标签;
                     tags(rds, cn-beijing, INSTANCE, null, $tagFilter);
+## 10、20200107：
+    a.修复window磁盘\转义问题
+## 11、20200730：
+    a.tagFilter(type, regionId, tagType, tagKey)
+        支持tagKey参数请求
+    b.优化variable dimensions功能；
+    c.优化部分代码逻辑
+    d.取消加密验证
