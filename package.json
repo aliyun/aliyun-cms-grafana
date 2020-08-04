@@ -43,7 +43,7 @@
   "dependencies": {
     "babel-plugin-transform-es2015-for-of": "^6.23.0",
     "babel-preset-es2015": "^6.24.1",
-    "lodash": "^4.17.4",
+    "lodash": "^4.17.19",
     "mocha": "^8.0.1",
     "package.json": "^2.0.1"
   },
