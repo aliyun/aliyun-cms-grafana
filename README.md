@@ -8,6 +8,7 @@
         在数据源类型(Type)对应的下拉列表中选择CMS Grafana Service。
     b.然后开始配置HTTP以及cloudmonitor service details,URL是所有获取云监控数据的请求地址,根据你所在Endpoint填写,
         默认为http://metrics.cn-hangzhou.aliyuncs.com, Access key ID和Secret access key填写账号AK,填写完成点击Save & Test,
+        注： 这里的Access key ID和Secret access key 都需要进行base64的encode，可以使用工具 https://www.bing.com/search?q=online+base64+encoder
         如果显示Success Data source is working,说明数据源配置成功,可以开始在grafana中访问阿里云监控的数据了。
         具体可参考:https://help.aliyun.com/document_detail/109434.html?spm=a2c4g.11186623.6.565.70d048adQpRZsT
 ## 3、数据源打包发布方式
