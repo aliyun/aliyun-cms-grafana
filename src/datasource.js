@@ -4,7 +4,9 @@ import { CmsSigner } from "./signer.js";
 
 export class GenericDatasource {
   constructor(instanceSettings, $q, backendSrv, templateSrv) {
-    this.type = instanceSettings.type;
+	this.type = instanceSettings.type;
+	this.datasourceId = instanceSettings.id;
+	this.aliyunUserId = instanceSettings.jsonData.userId;
     this.basePath = instanceSettings.url;
     this.name = instanceSettings.name;
     this.jsonData = instanceSettings.jsonData;
@@ -18,6 +20,7 @@ export class GenericDatasource {
     this.ecsBasePath = "https://ecs.aliyuncs.com";
     this.rdsVersion = "2014-08-15";
     this.rdsBasePath = "https://rds.aliyuncs.com";
+    this.cacheMeta = new Map();
   }
 
   query(options) {
@@ -66,14 +69,13 @@ export class GenericDatasource {
           if (typeof dimension == "string") {
             dimension = dimension.includes("{") ? dimension : "{" + dimension;
             dimension = dimension.includes("}") ? dimension : dimension + "}";
-            dimension = dimension.includes("\\") ? dimension.replace("\\", "\\\\") : dimension;
-            
+            // dimension = dimension.includes("\\") ? dimension.replace("\\/gi", "\\\\") : dimension;
             dimensions += dimension + ",";
           } else {
             dimension.forEach((dimension_i) => {
               dimension_i = dimension_i.includes("{") ? dimension_i : "{" + dimension_i;
               dimension_i = dimension_i.includes("}") ? dimension_i : dimension_i + "}";
-              dimension = dimension.includes("\\") ? dimension.replace("\\", "\\\\") : dimension;
+              // dimension = dimension.includes("\\") ? dimension.replace("\\/gi", "\\\\") : dimension;
 
               dimensions += dimension_i + ",";
             });
@@ -83,78 +85,100 @@ export class GenericDatasource {
         dimensions = "[" + dimensions + "]";
         dimensions = dimensions.replace(/\&/gi, "%26").replace(/\{/gi, "%7B").replace(/\}/gi, "%7D");
       }
+      var target_keys = [];
+      var resource = "";
+      if(this.isEmpty(project) || this.isEmpty(metric) || this.isEmpty(xcol) || ycol.length == 0){
+        return;
+      }
+      this.queryMetricMeta(project, metric).then(response => {
+        resource = response;
+        if (resource.length == 0 || this.isEmpty(resource[0].Dimensions)) {
+          return;
+        }
+        var target_key_arr = resource[0].Dimensions.split(",");
+        target_key_arr.forEach(value =>{
+          if(target_key_arr.length == 1){
+            target_keys.push(value);
+          }else{
+            if(value != "userId"){
+              target_keys.push(value);
+            }
+          }
+        })
+      });
+      
       //拼接url参数
       var queryConcat = "/?Action=QueryMetricList&Length=1000&Project=" + project + "&Metric=" + metric + "&Period=" + period
          + "&Dimensions=" + dimensions + "&StartTime=" + parseInt(options.range.from._d.getTime()) + "&EndTime=" + parseInt(options.range.to._d.getTime());
 
       //定义Promise元数据、根据URL发起请求
-      var request = this.doNextToken(queryConcat, "", 0).then((response) => {
-        var dataDatapoints = response;
+      var request = this.doNextToken(queryConcat, "", 0, "list").then((response) => {
         var resResult = [];
-        //处理数据分类
-        var target_datapoints = [];
-        if (dimensions.includes("instanceId")) {
-          for (var i in dataDatapoints) {
-            if (!target_datapoints[dataDatapoints[i].instanceId]) {
-              var arr = [];
-              arr.push(dataDatapoints[i]);
-              target_datapoints[dataDatapoints[i].instanceId] = arr;
-            } else {
-              target_datapoints[dataDatapoints[i].instanceId].push(
-                dataDatapoints[i]
-              );
-            }
-          }
-        }
-        // 处理Grafana所需的target值、Target组的所需返回结果集
-        ycol.map((ycolTarget) => {
-          if (dimensions.includes("instanceId")) {
-            for (var i in target_datapoints) {
-              var datapoints = [];
-              target_datapoints[i].forEach((Datapoint) => {
-                var datapoint = [];
-                datapoint.push(Datapoint[ycolTarget], Datapoint[xcol]);
-                // 封装返回目标的第二层数组值
-                datapoints.push(datapoint);
-              });
-              // 封装返回目标的第三层数组值
+        this.dataGroupByKeys(response, target_keys).then(dataMap => {
+          dataMap.forEach((value, key) => {
+
+            ycol.map((ycolTarget) => {
+              var dataPoints = [];
+              
+              value.forEach(valueObj =>{
+                var dataPoint = [];
+                dataPoint.push(valueObj[ycolTarget], valueObj[xcol]);
+                  // 封装返回目标的第二层数组值
+                  dataPoints.push(dataPoint);
+                // 封装返回目标的第三层数组值
+              })
+
               resResult.push({
-                target: describe + i + "." + ycolTarget,
-                datapoints: datapoints,
+                target: describe + key + "." + ycolTarget,
+                datapoints: dataPoints,
               });
-            }
-          } else {
-            var datapoints = [];
-            dataDatapoints.forEach((Datapoint) => {
-              var datapoint = [];
-              datapoint.push(Datapoint[ycolTarget], Datapoint[xcol]);
-              // 封装返回目标的第二层数组值
-              datapoints.push(datapoint);
             });
-            // 封装返回目标的第三层数组值
-            resResult.push({
-              target: describe + ycolTarget,
-              datapoints: datapoints,
-            });
-          }
+          });
+
+          result = result.concat(typeof resResult == "string" ? JSON.parse(resResult) : resResult);
         });
-        // 转对象封装
-        result = result.concat(
-          typeof resResult == "string" ? JSON.parse(resResult) : resResult
-        );
       });
       requests.push(request);
     });
+
     // 统一单独处理返回值
     return Promise.all(requests.map((p) => p.catch((e) => e))).then(() => {
       return { data: result };
     });
   }
+
+  async dataGroupByKeys(list, keys) {
+    let tmpMap = new Map();
+    for(let i = 0; i < list.length; i++){
+      let dataPoint = list[i];
+      
+      let key_obj = {};
+      let key_target = dataPoint[keys[0]];
+      for(let j = 0; j < keys.length; j++){
+        let key = keys[j];
+        let value = dataPoint[key];
+        key_obj[key] = value;
+
+        if(j > 0){
+          key_target += "_" + value;
+        }
+      }
+      let value_arr = [];
+      if(tmpMap.has(key_target)){
+        value_arr = tmpMap.get(key_target);
+      }
+
+      value_arr.push(dataPoint);
+      tmpMap.set(key_target, value_arr);
+    }
+    return tmpMap;
+  }
+
   wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
 
-  async doNextToken(queryConcat, cursor, count) {
+  async doNextToken(queryConcat, cursor, count, type) {
     var path = "";
     if (this.isEmpty(cursor)) {
       path = queryConcat;
@@ -172,15 +196,17 @@ export class GenericDatasource {
       d.resolve({ data: [] });
       return d.promise;
     }
-    await this.wait(1000);
+    if("list" == type){
+      await this.wait(1000);
+    }else if("last" == type){
+      await this.wait(100);
+    }
     //定义Promise元数据、根据URL发起请求
-    return this.backendSrv
-      .datasourceRequest({
+    return this.backendSrv.datasourceRequest({
         url: query,
         method: "GET",
         headers: this.headers,
-      })
-      .then((response) => {
+      }).then((response) => {
         var result = [];
         if (response.status == "200" && response.data.Code == "200") {
           result = angular.fromJson(response.data.Datapoints);
@@ -192,7 +218,7 @@ export class GenericDatasource {
           if (this.isEmpty(response.data.Cursor)) {
             return result;
           } else {
-            return this.doNextToken(queryConcat, nextToken, count).then((data) => {
+            return this.doNextToken(queryConcat, nextToken, count, type).then((data) => {
               return result.concat(data); 
             });
           }
@@ -206,7 +232,7 @@ export class GenericDatasource {
   // 测试连接数据源接口
   testDatasource() {
     var param = {
-      path: "/?Action=AccessKeyGet",
+      path: "?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=acs_ecs_dashboard",
       method: "GET",
     };
     return this.backendSrv.datasourceRequest({
@@ -214,13 +240,19 @@ export class GenericDatasource {
         method: "GET",
       }).then((response) => {
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           return {
             status: "success",
             message: "Data source is working",
             title: "Success",
           };
-        }
+        }else{
+			return {
+				status: "failure",
+				message: "Data source is not working",
+				title: "Failure",
+			  };
+		}
       });
   }
 
@@ -283,17 +315,17 @@ export class GenericDatasource {
       var path = "/?Action=DescribeTags&PageNumber=1&PageSize=100&RegionId=" + regionId;
       var tagKeyFilter = [];
       if(tagKey){
-        path = "/?Action=DescribeTags&PageNumber=1&PageSize=100&RegionId=" + regionId + "&Tag.1.key=" + tagKey;
-        if(tagKey.indexOf("&Tag.2.key=") != -1){
+        path = "/?Action=DescribeTags&PageNumber=1&PageSize=100&RegionId=" + regionId + "&Tag.1.Key=" + tagKey;
+        if(tagKey.indexOf("&Tag.2.Key=") != -1){
           var tagKeyArry = tagKey.split("&");
           tagKeyArry.forEach(tagKeyInd => {
-            tagKeyFilter.push(tagKeyInd.substring(tagKeyInd.indexOf("key=") == -1 ? 0 : tagKeyInd.indexOf("key=") + 4));
+            tagKeyFilter.push(tagKeyInd.substring(tagKeyInd.indexOf("Key=") == -1 ? 0 : tagKeyInd.indexOf("Key=") + 4));
           })
         }else{
           tagKeyFilter.push(tagKey);
         }
 
-        if(tagKey.indexOf("Tag.1.key=") != -1){
+        if(tagKey.indexOf("Tag.1.Key=") != -1){
           path = "/?Action=DescribeTags&PageNumber=1&PageSize=100&RegionId=" + regionId + "&" + tagKey;
         }
         if(tagKey.indexOf("PageNumber=") != -1){
@@ -337,7 +369,7 @@ export class GenericDatasource {
         }
       }
       result = [];
-      return this.getDimensions(namespace, metric, "", []).then(
+      return this.getDimensions(namespace, metric, "", "", []).then(
         (dimensions) => {
           var is_instanceId_bool = this.isEmpty(instanceId);
           var is_filter_bool = this.isEmpty(filter);
@@ -408,7 +440,7 @@ export class GenericDatasource {
   //返回所有的Project,QueryProjectMeta的API无自定义监控project、日志监控project，已拼接
   getProject() {
     var param = {
-      path: "/?Action=QueryProjectMeta&PageNumber=1&PageSize=1000",
+      path: "?Action=QueryProjectMeta&PageNumber=1&PageSize=1000",
       method: "GET",
     };
     return this.backendSrv
@@ -419,31 +451,17 @@ export class GenericDatasource {
       .then((response) => {
         var result = [];
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           data.Resources.Resource.map((resource) => {
-            if (!this.isEmpty(resource.Project)) {
-              result.push(resource.Project);
+            if (!this.isEmpty(resource.Namespace)) {
+              result.push(resource.Namespace);
             }
           });
-        }
+		}
         //增加自定义监控、日志监控选项
-        var acs_param = {
-          path: "/?Action=AccessKeyGet",
-          method: "GET",
-        };
-        return this.backendSrv
-          .datasourceRequest({
-            url: this.buildRealUrl(acs_param),
-            method: "GET",
-          })
-          .then((response) => {
-            var data = response.data;
-            if (data.ErrorCode == 200 && data.Success == true) {
-              result.push("acs_logMonitor_" + data.UserId);
-              result.push("acs_customMetric_" + data.UserId);
-            }
-            return this.util.arrayToMap(result);
-          });
+		result.push("acs_logMonitor_" + this.aliyunUserId);
+		result.push("acs_customMetric_" + this.aliyunUserId);
+		return this.util.arrayToMap(result);
       })
       .catch(function (error) {
         console.log(error);
@@ -455,7 +473,7 @@ export class GenericDatasource {
   getMetrics(project) {
     var param = {
       path:
-        "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1000&Project=" +
+        "?Action=QueryMetricMeta&PageNumber=1&PageSize=1000&Project=" +
         project,
       method: "GET",
     };
@@ -466,11 +484,11 @@ export class GenericDatasource {
       })
       .then((response) => {
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           var result = [];
           data.Resources.Resource.map((resource) => {
-            if (!this.isEmpty(resource.Metric)) {
-              result.push(resource.Metric);
+            if (!this.isEmpty(resource.MetricName)) {
+              result.push(resource.MetricName);
             }
           });
           return this.util.arrayToMap(result);
@@ -485,21 +503,15 @@ export class GenericDatasource {
   //根据Project及Metrics返回对应的所有的Period,无自定义监控、日志监控project对应的Period
   getPeriod(project, metric) {
     var param = {
-      path:
-        "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" +
-        project +
-        "&Metric=" +
-        metric,
+      path: "?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" + project + "&Metric=" + metric,
       method: "GET",
     };
-    return this.backendSrv
-      .datasourceRequest({
+    return this.backendSrv.datasourceRequest({
         url: this.buildRealUrl(param),
         method: "GET",
-      })
-      .then((response) => {
+      }).then((response) => {
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           var period = [];
           var resource = data.Resources.Resource;
           if (resource.length > 0 && !this.isEmpty(resource[0].Periods)) {
@@ -507,8 +519,7 @@ export class GenericDatasource {
           }
           return this.util.arrayToMap(period);
         }
-      })
-      .catch(function (error) {
+      }).catch(function (error) {
         console.log(error);
         return;
       });
@@ -517,21 +528,15 @@ export class GenericDatasource {
   //根据Project及Metrics返回对应的所有的Statistics,未去除已选项,无自定义监控、日志监控project对应的Period
   getStatistics(project, metric) {
     var param = {
-      path:
-        "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" +
-        project +
-        "&Metric=" +
-        metric,
+      path: "?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" + project + "&Metric=" + metric,
       method: "GET",
     };
-    return this.backendSrv
-      .datasourceRequest({
+    return this.backendSrv.datasourceRequest({
         url: this.buildRealUrl(param),
         method: "GET",
-      })
-      .then((response) => {
+      }).then((response) => {
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           var statistics = [];
           var resource = data.Resources.Resource;
           if (resource.length > 0 && !this.isEmpty(resource[0].Statistics)) {
@@ -539,8 +544,7 @@ export class GenericDatasource {
           }
           return this.util.arrayToMap(statistics);
         }
-      })
-      .catch(function (error) {
+      }).catch(function (error) {
         console.log(error);
         return;
       });
@@ -549,17 +553,15 @@ export class GenericDatasource {
   //返回所有的Groups,自定义监控、日志使用
   getGroups() {
     var param = {
-      path: "/?Action=ListMyGroups&PageNumber=1&PageSize=9000",
+      path: "?Action=ListMyGroups&PageNumber=1&PageSize=9000",
       method: "GET",
     };
-    return this.backendSrv
-      .datasourceRequest({
+    return this.backendSrv.datasourceRequest({
         url: this.buildRealUrl(param),
         method: "GET",
-      })
-      .then((response) => {
+      }).then((response) => {
         var data = response.data;
-        if (data.ErrorCode == 200 && data.Success == true) {
+        if (data.Code == "200" && data.Success == true) {
           var result = [];
           var resource = data.Resources.Resource;
           var i = resource.length;
@@ -585,115 +587,100 @@ export class GenericDatasource {
       });
   }
 
-  getDimensions(project, metric, period, dimensions) {
-    if (
-      project.indexOf("acs_customMetric") != -1 ||
-      project.indexOf("acs_logMonitor") != -1
-    ) {
+  getDimensions(project, metric, period, dimensions, resource) {
+    if (project.indexOf("acs_customMetric") != -1 || project.indexOf("acs_logMonitor") != -1) {
       return;
     }
-    var result = [];
     var endTime = new Date().getTime();
-    var startTime = endTime - 1 * 60 * 60 * 1000;
-    var param = {
-      path:
-        "/?Action=QueryMetricLast&Page=1&Length=90000&Period=" +
-        period +
-        "&Project=" +
-        project +
-        "&Metric=" +
-        metric +
-        "&StartTime=" +
-        startTime +
-        "&EndTime=" +
-        endTime,
-      method: "GET",
-    };
-    return this.backendSrv
-      .datasourceRequest({
-        url: this.buildRealUrl(param),
-        method: "GET",
-      })
-      .then((response) => {
-        var data = response.data;
-        if (data.Success == false) {
-          return;
+    var startTime = endTime - 15 * 60 * 1000;
+    // TODO
+    var queryConcat = "?Action=QueryMetricLast&Period=" + period + "&Project=" + project + "&Metric=" + metric + "&StartTime=" + startTime + "&EndTime=" + endTime;
+    return this.doNextToken(queryConcat, "", 0, "last").then((data) => {
+        if (data.length == 0) {
+          return[];
         }
         // 构建可选参数dimensions
-        param = {
-          path:
-            "/?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" +
-            project +
-            "&Metric=" +
-            metric,
-          method: "GET",
-        };
-        return this.backendSrv
-          .datasourceRequest({
-            url: this.buildRealUrl(param),
-            method: "GET",
-          })
-          .then((response_meta) => {
-            var data_meta = response_meta.data;
-            if (data_meta.ErrorCode == 200 && data_meta.Success == true) {
-              var resource = data_meta.Resources.Resource;
-              if (
-                resource.length == 0 ||
-                this.isEmpty(resource[0].Dimensions)
-              ) {
-                return;
-              }
-              var dimension = resource[0].Dimensions.split(",");
-              var datapoints = JSON.parse(data.Datapoints);
-              datapoints.map((datapoint) => {
-                var datapointInfo = '{"';
-                dimension.forEach(function (value, index) {
-                  value = value.replace(/"/g, "");
-                  if (value != "userId") {
-                    if (datapoint[value].indexOf(":\\") != -1) {
-                      datapointInfo += value + '":"' + datapoint[value] + '\\"';
-                    } else {
-                      datapointInfo += value + '":"' + datapoint[value] + '"';
-                    }
-                    if (index == dimension.length - 1) {
-                      datapointInfo += "}";
-                    } else {
-                      datapointInfo += ';"';
-                    }
-                  }
-                });
-                //去重
-                if (result.length == 0) {
-                  if (dimensions.length == 0) {
-                    result.push(datapointInfo);
-                  } else if (
-                    dimensions.length > 0 &&
-                    !dimensions.includes(datapointInfo)
-                  ) {
-                    result.push(datapointInfo);
-                  }
-                } else if (
-                  result.length > 0 &&
-                  !result.includes(datapointInfo)
-                ) {
-                  if (dimensions.length == 0) {
-                    result.push(datapointInfo);
-                  } else if (
-                    dimensions.length > 0 &&
-                    !dimensions.includes(datapointInfo)
-                  ) {
-                    result.push(datapointInfo);
-                  }
-                }
-              });
-              return this.util.arrayToMap(result);
+        if(!this.isEmpty(resource)){
+          return this.dimensionData(data, resource, dimensions);
+        }else{
+          return this.queryMetricMeta(project, metric).then(response => {
+            resource = response;
+            if (this.isEmpty(resource) || this.isEmpty(resource[0].Dimensions)) {
+              return[];
             }
+            return this.dimensionData(data, resource, dimensions);
           });
-      })
-      .catch(function (error) {
+        }
+      }).catch(function (error) {
         console.log(error);
-        return;
+        return[];
       });
+  }
+
+  async dimensionData(data, resource, dimensions){
+    var result = [];
+    var dimension = resource[0].Dimensions.split(",");
+
+    // var datapoints = JSON.parse(data.Datapoints);
+    data.map((datapoint) => {
+      var datapointInfo = '{"';
+      dimension.forEach(function (value, index) {
+        value = value.replace(/"/g, "");
+        if (value != "userId" || (value == "userId" && dimension.length == 1)) {
+          if (datapoint[value].indexOf(":\\") != -1) {
+            datapointInfo += value + '":"' + datapoint[value] + '\\"';
+          } else {
+            datapointInfo += value + '":"' + datapoint[value] + '"';
+          }
+          if (index == dimension.length - 1) {
+            datapointInfo += "}";
+          } else {
+            datapointInfo += ';"';
+          }
+        }
+      });
+      //去重
+      if (result.length == 0) {
+        if (dimensions.length == 0) {
+          result.push(datapointInfo);
+        } else if (dimensions.length > 0 && !dimensions.includes(datapointInfo)) {
+          result.push(datapointInfo);
+        }
+      } else if (result.length > 0 && !result.includes(datapointInfo)) {
+        if (dimensions.length == 0) {
+          result.push(datapointInfo);
+        } else if (dimensions.length > 0 && !dimensions.includes(datapointInfo)) {
+          result.push(datapointInfo);
+        }
+      }
+    });
+    return this.util.arrayToMap(result);  
+  }
+
+  async queryMetricMeta(project, metric){
+    let rand = Math.floor(Math.random() * 4) + 5;
+    await this.wait(100 * rand);
+    
+    let resource = this.cacheMeta.get(project + "_" + metric);
+    if(this.isEmpty(resource)){
+      var param = {
+        path: "?Action=QueryMetricMeta&PageNumber=1&PageSize=1&Project=" + project + "&Metric=" + metric,
+        method: "GET",
+      };
+      return this.backendSrv.datasourceRequest({
+        url: this.buildRealUrl(param),
+        method: "GET",
+      }).then((response_meta) => {
+        var data_meta = response_meta.data;
+        if (data_meta.Code == "200" && data_meta.Success == true) {
+          resource = data_meta.Resources.Resource;
+          this.cacheMeta.set(project + "_" + metric, resource);
+          return resource;
+        }
+      });
+    }else{
+      return resource;
+    }
   }
 
   // 暂时无翻页功能,无nextToken字段返回
@@ -868,59 +855,23 @@ export class GenericDatasource {
 
   // 根据云监控API文档处理URL签名,做封装调用接口用
   buildRealUrl(param) {
-    var signer = new CmsSigner(
-      {
-        accessKeyId: this.jsonData.cmsAccessKey,
-        secretAccessKey: this.jsonData.cmsSecretKey,
-        version: this.cmsVersion,
-      },
-      param
-    );
-    signer.addAuthorization();
-    return this.basePath + signer.request.path;
+    return "/api/datasources/"+this.datasourceId+"/resources/proxy_aliyun_cms_pop" +  param.path;
   }
 
   // 根据ECS API文档处理URL签名,做封装调用接口用
   buildECSRealUrl(param) {
-    var signer = new CmsSigner(
-      {
-        accessKeyId: this.jsonData.cmsAccessKey,
-        secretAccessKey: this.jsonData.cmsSecretKey,
-        version: this.ecsVersion,
-      },
-      param
-    );
-    signer.addAuthorization();
-    return this.ecsBasePath + signer.request.path;
+	return "/api/datasources/"+this.datasourceId+"/resources/proxy_aliyun_ecs_pop" +  param.path;
   }
 
   // 根据RDS API文档处理URL签名,做封装调用接口用
   buildRDSRealUrl(param) {
-    var signer = new CmsSigner(
-      {
-        accessKeyId: this.jsonData.cmsAccessKey,
-        secretAccessKey: this.jsonData.cmsSecretKey,
-        version: this.rdsVersion,
-      },
-      param
-    );
-    signer.addAuthorization();
-    return this.rdsBasePath + signer.request.path;
+	return "/api/datasources/"+this.datasourceId+"/resources/proxy_aliyun_rds_pop" +  param.path;
   }
 
   // 判断对象是否为空对象 true 空
   isEmpty(obj) {
     var re = new RegExp("^[ ]+$");
-    if (
-      !obj ||
-      obj == "null" ||
-      obj == null ||
-      obj == " " ||
-      obj == "" ||
-      obj == '""' ||
-      re.test(obj) ||
-      typeof obj == "undefined"
-    ) {
+    if (!obj || obj == "null" || obj == null || obj == " " || obj == "" || obj == '""' || re.test(obj) || typeof obj == "undefined") {
       return true;
     } // 为空
     return false; // 不为空

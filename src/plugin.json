@@ -9,6 +9,9 @@
 
   "metrics": true,
   "annotations": true,
+  "backend": true,
+  "executable": "cms-datasource",
+
 
   "info": {
     "description": "plugin for aliyun CMS",
@@ -25,9 +28,9 @@
       {"name": "MIT License", "url": "https://github.com/aliyun/aliyun-cms-grafana.git"}
     ],
 
-    "version": "1.0.1",
+    "version": "1.0.3",
     "created": "2018-10-10",
-    "modify":"2019-04-11",
+    "modify":"2020-08-27",
     "cms open api version":"20180308"
   },
 

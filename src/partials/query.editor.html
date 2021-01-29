@@ -18,7 +18,7 @@
           allow-custom="true"
           lookup-text="true"
           get-options="ctrl.getProjects(true)"
-          on-change="ctrl.onChangeInternal()"
+          on-change="ctrl.changeValue()"
           css-class="gf-size-auto">
         </gf-form-dropdown>
       </div>
@@ -34,7 +34,7 @@
           allow-custom="true"
           lookup-text="true"
           get-options="ctrl.getMetrics(true)"
-          on-change="ctrl.onChangeInternal()"
+          on-change="ctrl.changeValue()"
           css-class="gf-size-auto">
         </gf-form-dropdown>
       </div>
@@ -50,10 +50,11 @@
           allow-custom="true"
           lookup-text="true"
           get-options="ctrl.getPeriod()"
-          on-change="ctrl.onChangeInternal()"
+          on-change="ctrl.changeValue()"
           css-class="gf-size-auto">
         </gf-form-dropdown>
       </div>
+      <!-- on-change="ctrl.onChangeInternal()" -->
 
       <div class="gf-form " >
         <span class="gf-form-label query-keyword width-8">
@@ -66,7 +67,6 @@
           allow-custom="true"
           lookup-text="true"
           get-options="ctrl.getGroups()"
-          on-change="ctrl.onChangeInternal()"
           css-class="gf-size-auto">
            
         </gf-form-dropdown>
@@ -131,7 +131,7 @@
           </info-popover>
         </span>
         <input type="text" class="gf-form-input width-7 ng-pristine ng-untouched ng-valid ng-empty" ng-model="ctrl.target.xcol"
-              spellcheck="false" placeholder="x column name" ng-blur="ctrl.onChangeInternal()">
+              spellcheck="false" placeholder="x column name">
       </div>
       <div class="gf-form">
         <span class="gf-form-label query-keyword width-12">

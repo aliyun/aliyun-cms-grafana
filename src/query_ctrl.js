@@ -20,6 +20,7 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
     this.dimensions;
     this.target.ycol = this.target.ycol || [];
     this.statistics;
+    this.dimensionsCache = [];
 
   }
 
@@ -48,6 +49,11 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
       var metric = this.util.exists(this.target.metric) == true?this.util.resolve(this.target.metric, {}):this.target.metric;
       return this.datasource.getPeriod(project,metric);
     }
+  }
+  
+  changeValue() {
+    this.checkIsNull();
+    this.dimensionsCache = [];
   }
 
   getStatistics() {
@@ -95,7 +101,10 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
       if(this.target.dimensions.indexOf("$") != -1){
         dimensions=this.util.resolve(this.target.dimensions, {});
       };
-      return this.datasource.getDimensions(project,metric,period,dimensions);
+      if(this.dimensionsCache.length == 0){
+        this.dimensionsCache = this.datasource.getDimensions(project,metric,period,dimensions, "");
+      }
+      return this.dimensionsCache;
     }
   }
 

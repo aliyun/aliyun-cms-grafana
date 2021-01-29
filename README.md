@@ -13,6 +13,14 @@
 ## 3、数据源打包发布方式
     a.进入aliyun-cms-grafana目录下,执行grunt命令(需要安装nodejs和npm),则会按照Gruntfile.js里面的配置将项目里面的文件打包到指定的目录,
         当前配置是将项目文件打包到dist目录下,发布的时候打包发布整个插件目录下的文件,dist目录下一定是经源文件编译后的。
+    b. 服务端编译
+    需要安装   
+        go 1.14   
+        mage   
+    之后在目录中运行 mage -v， 会自动在 dist目录下生成 相应的二进制包。之后跟随前端代码统一发布
+    
+
+    
 ## 4、FAQ
     a.云监控grafana数据源配置的AK保存在哪里?有没有AK被窃取的风险？
         数据源配置AK存储在grafana内置的数据库里,不会通过网络传输AK,只要保证安装grafana机器的安全AK就不会被窃取。
@@ -87,7 +95,21 @@
     a.修复window磁盘\转义问题
 ## 11、20200730：
     a.tagFilter(type, regionId, tagType, tagKey)
-        支持tagKey参数请求
+        支持tagKey做请求参数
     b.优化variable dimensions功能；
     c.优化部分代码逻辑
     d.取消加密验证
+    e.支持30天内时间区间查询
+## 12、20200806：
+    a.增加根据queryMetricMeta API 获得dimensions后，按dimensions自动分类处理数据，实现根据dimensions信息绘制图线(queryMetricMeta 的QPS限制比较高，不建议一次刷新超过10个panel，当需要监控图表过多时，建议使用row功能，或者在同一个folder下多构建几个dashboard;)
+    ​b.优化Grafana同一个dashboard内多个panel同时刷新时，调用queryMetricMeta API 因QPS限制会产生失败问题，增加每次调用会随机延时1s内;
+    ​c.优化部分代码逻辑，dimensions为空时，会查询当前project和metric下所有的指标数据，当数据体量较大时，建议调大period值;
+    d.增加grafana服务内meta缓存，此缓存依托于浏览器，点击refresh dashboard会使用缓存内的meta
+## 13、20200827:
+    a.优化触发query方式，仅在操作Y - column或者Y - column describe时自动触发查询，首次进入时仍会触发;
+    b.增加对Dimensions数据缓存处理，在修改namespace或metric时会刷新缓存;
+    c.增加对QueryMetricLast支持分页自动查询功能;
+
+## 14、20210128
+    升级到版本2.0 并生成之前版本1.0
+    a. 请求方式改为服务端请求，解决客户端AK可以明文读取的安全问题
