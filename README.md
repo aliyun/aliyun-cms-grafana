@@ -6,7 +6,7 @@
 ## 1、直接安装云监控grafana数据源
     a. 直接 从release 页面 https://github.com/aliyun/aliyun-cms-grafana/releases 里面下载 aliyun_cms_grafana_datasource_v2.0.tar.gz
     b. 下载到 grafan的plugin目录中，解压缩 tar -xzf aliyun_cms_grafana_datasource_v2.0.tar.gz
-    c. 修改conf/defaults.init 允许未签名插件运行
+    c. 修改 conf/defaults.ini 允许未签名插件运行
         allow_loading_unsigned_plugins = aliyun_cms_grafana_datasource
     d. 重启grafana
 
@@ -24,7 +24,7 @@
         1）按照上面顺序编译完成后，代码都会到dist下面。包括前端文件和二进制可执行文件 cms-datasource*。
         2）保证 cms-datasource* 都具有可执行权限。chmod +x cms-datasource*
         3) 在grafana 的plugin目录中，创建 aliyun_cms_grafana_datasource 目录，把编译出来的dist目录拷贝到此
-        4) 修改conf/defaults.init 允许未签名插件运行
+        4) 修改 conf/defaults.ini 允许未签名插件运行
             allow_loading_unsigned_plugins = aliyun_cms_grafana_datasource
         5) 重启grafana
 
