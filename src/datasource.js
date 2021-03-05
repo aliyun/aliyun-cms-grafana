@@ -635,7 +635,7 @@ export class GenericDatasource {
           if (index == dimension.length - 1) {
             datapointInfo += "}";
           } else {
-            datapointInfo += ';"';
+            datapointInfo += ',"';
           }
         }
       });
