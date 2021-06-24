@@ -301,10 +301,6 @@ func proxyRdsDescribeTags(instSetting *instanceSettings, params map[string]strin
 		request.Tags = tags
 	}
 
-	if tags, ok := params["Tags"]; ok {
-		request.Tags = tags
-	}
-
 	if instanceID, ok := params["DBInstanceId"]; ok {
 		request.DBInstanceId = instanceID
 	}
