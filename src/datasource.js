@@ -516,6 +516,7 @@ export class GenericDatasource {
           var resource = data.Resources.Resource;
           if (resource.length > 0 && !this.isEmpty(resource[0].Periods)) {
             period = resource[0].Periods.split(",");
+            period.splice(0, 0, "auto");
           }
           return this.util.arrayToMap(period);
         }

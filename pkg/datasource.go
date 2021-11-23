@@ -208,14 +208,14 @@ func proxyQueryMetricData(instSetting *instanceSettings, params map[string]strin
 		request.Dimensions = "{}"
 	}
 	if period, ok := params["Period"]; ok {
-		request.Period = period
-	} else {
-		request.Period = "60"
+		if period != "auto" {
+			request.Period = period
+		}
 	}
 	if size, ok := params["Length"]; ok {
 		request.Length = size
 	} else {
-		request.Length = "1000"
+		request.Length = "1440"
 	}
 	if startTime, ok := params["StartTime"]; ok {
 		request.StartTime = startTime
@@ -256,14 +256,14 @@ func proxyQueryMetricLast(instSetting *instanceSettings, params map[string]strin
 		request.Dimensions = "{}"
 	}
 	if period, ok := params["Period"]; ok {
-		request.Period = period
-	} else {
-		request.Period = "60"
+		if period != "auto" {
+			request.Period = period
+		}
 	}
 	if size, ok := params["Length"]; ok {
 		request.Length = size
 	} else {
-		request.Length = "1000"
+		request.Length = "1440"
 	}
 	if startTime, ok := params["StartTime"]; ok {
 		request.StartTime = startTime

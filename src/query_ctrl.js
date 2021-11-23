@@ -54,6 +54,7 @@ export class GenericDatasourceQueryCtrl extends QueryCtrl {
   changeValue() {
     this.checkIsNull();
     this.dimensionsCache = [];
+    this.panelCtrl.refresh();
   }
 
   getStatistics() {
