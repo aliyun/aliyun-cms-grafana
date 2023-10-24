@@ -106,7 +106,7 @@ export class GenericDatasource {
           }
         })
       });
-      
+
       //拼接url参数
       var queryConcat = "/?Action=QueryMetricList&Length=1000&Project=" + project + "&Metric=" + metric + "&Period=" + period
          + "&Dimensions=" + dimensions + "&StartTime=" + parseInt(options.range.from._d.getTime()) + "&EndTime=" + parseInt(options.range.to._d.getTime());
@@ -119,7 +119,7 @@ export class GenericDatasource {
 
             ycol.map((ycolTarget) => {
               var dataPoints = [];
-              
+
               value.forEach(valueObj =>{
                 var dataPoint = [];
                 dataPoint.push(valueObj[ycolTarget], valueObj[xcol]);
@@ -151,7 +151,7 @@ export class GenericDatasource {
     let tmpMap = new Map();
     for(let i = 0; i < list.length; i++){
       let dataPoint = list[i];
-      
+
       let key_obj = {};
       let key_target = dataPoint[keys[0]];
       for(let j = 0; j < keys.length; j++){
@@ -219,7 +219,7 @@ export class GenericDatasource {
             return result;
           } else {
             return this.doNextToken(queryConcat, nextToken, count, type).then((data) => {
-              return result.concat(data); 
+              return result.concat(data);
             });
           }
         }
@@ -473,7 +473,7 @@ export class GenericDatasource {
   getMetrics(project) {
     var param = {
       path:
-        "?Action=QueryMetricMeta&PageNumber=1&PageSize=1000&Project=" +
+        "?Action=QueryMetricMeta&PageNumber=1&PageSize=2000&Project=" +
         project,
       method: "GET",
     };
@@ -655,13 +655,13 @@ export class GenericDatasource {
         }
       }
     });
-    return this.util.arrayToMap(result);  
+    return this.util.arrayToMap(result);
   }
 
   async queryMetricMeta(project, metric){
     let rand = Math.floor(Math.random() * 4) + 5;
     await this.wait(100 * rand);
-    
+
     let resource = this.cacheMeta.get(project + "_" + metric);
     if(this.isEmpty(resource)){
       var param = {
