@@ -7,10 +7,16 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/cms"
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
-	"github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
+	cms "github.com/alibabacloud-go/cms-20190101/v9/client"
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	ecs "github.com/alibabacloud-go/ecs-20140526/v7/client"
+	rds "github.com/alibabacloud-go/rds-20140815/v12/client"
+	"github.com/alibabacloud-go/tea/tea"
+
+	// "github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	// "github.com/aliyun/alibaba-cloud-sdk-go/services/cms"
+	// "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	// "github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -82,25 +88,57 @@ func (ds *CmsDatasource) getDataSourceSetting(req *http.Request) (*instanceSetti
 	return instSetting, nil
 }
 
+func createCmsClient(instSetting *instanceSettings) (*cms.Client, error) {
+	config := &openapi.Config{
+		AccessKeyId:     tea.String(instSetting.accessKey),
+		AccessKeySecret: tea.String(instSetting.accessSecret),
+		Endpoint:        tea.String("metrics.cn-hangzhou.aliyuncs.com"),
+		Protocol:        tea.String("https"),
+	}
+	client, err := cms.NewClient(config)
+	return client, err
+}
+
+func createRdsClient(instSetting *instanceSettings) (*rds.Client, error) {
+	config := &openapi.Config{
+		AccessKeyId:     tea.String(instSetting.accessKey),
+		AccessKeySecret: tea.String(instSetting.accessSecret),
+		Endpoint:        tea.String("rds.aliyuncs.com"),
+		Protocol:        tea.String("https"),
+	}
+	client, err := rds.NewClient(config)
+	return client, err
+}
+
+func createEcsClient(instSetting *instanceSettings) (*ecs.Client, error) {
+	config := &openapi.Config{
+		AccessKeyId:     tea.String(instSetting.accessKey),
+		AccessKeySecret: tea.String(instSetting.accessSecret),
+		Endpoint:        tea.String("ecs-cn-hangzhou.aliyuncs.com"),
+		Protocol:        tea.String("https"),
+	}
+	client, err := ecs.NewClient(config)
+	return client, err
+}
+
 func proxyListMetricMeta(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeMetricMetaListRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
+	request := &cms.DescribeMetricMetaListRequest{}
 	if project, ok := params["Project"]; ok {
-		request.Namespace = project
+		request.Namespace = tea.String(project)
 	}
 	if metric, ok := params["Metric"]; ok {
-		request.MetricName = metric
+		request.MetricName = tea.String(metric)
 	}
 	if pageSize, ok := params["PageSize"]; ok {
 		size, err := strconv.ParseInt(pageSize, 10, 32)
 		if err != nil {
-			request.PageSize = requests.NewInteger(int(size))
+			request.PageSize = tea.Int32(int32(size))
 		} else {
-			request.PageSize = requests.NewInteger(1000)
+			request.PageSize = tea.Int32(1000)
 		}
 	} else {
-		request.PageSize = requests.NewInteger(1000)
+		request.PageSize = tea.Int32(1000)
 	}
 
 	response, err := client.DescribeMetricMetaList(request)
@@ -108,25 +146,24 @@ func proxyListMetricMeta(instSetting *instanceSettings, params map[string]string
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyListProjectMeta(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeProjectMetaRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
+	request := &cms.DescribeProjectMetaRequest{}
 	if pageSize, ok := params["PageSize"]; ok {
 		size, err := strconv.ParseInt(pageSize, 10, 32)
 		if err != nil {
-			request.PageSize = requests.NewInteger(int(size))
+			request.PageSize = tea.Int32(int32(size))
 		} else {
-			request.PageSize = requests.NewInteger(1000)
+			request.PageSize = tea.Int32(1000)
 		}
 	} else {
-		request.PageSize = requests.NewInteger(1000)
+		request.PageSize = tea.Int32(1000)
 	}
 
 	response, err := client.DescribeProjectMeta(request)
@@ -134,35 +171,34 @@ func proxyListProjectMeta(instSetting *instanceSettings, params map[string]strin
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyListMyGroups(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeMonitorGroupsRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
+	request := &cms.DescribeMonitorGroupsRequest{}
 	if pageSize, ok := params["PageSize"]; ok {
 		size, err := strconv.ParseInt(pageSize, 10, 32)
 		if err != nil {
-			request.PageSize = requests.NewInteger(int(size))
+			request.PageSize = tea.Int32(int32(size))
 		} else {
-			request.PageSize = requests.NewInteger(1000)
+			request.PageSize = tea.Int32(1000)
 		}
 	} else {
-		request.PageSize = requests.NewInteger(1000)
+		request.PageSize = tea.Int32(1000)
 	}
 	if pageNumber, ok := params["PageNumber"]; ok {
 		num, err := strconv.ParseInt(pageNumber, 10, 32)
 		if err != nil {
-			request.PageNumber = requests.NewInteger(int(num))
+			request.PageNumber = tea.Int32(int32(num))
 		} else {
-			request.PageNumber = requests.NewInteger(1)
+			request.PageNumber = tea.Int32(1)
 		}
 	} else {
-		request.PageNumber = requests.NewInteger(1)
+		request.PageNumber = tea.Int32(1)
 	}
 
 	response, err := client.DescribeMonitorGroups(request)
@@ -170,62 +206,59 @@ func proxyListMyGroups(instSetting *instanceSettings, params map[string]string, 
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyAccessKeyGet(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeMonitoringAgentAccessKeyRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
 
-	response, err := client.DescribeMonitoringAgentAccessKey(request)
+	response, err := client.DescribeMonitoringAgentAccessKey(&cms.DescribeMonitoringAgentAccessKeyRequest{})
 	if err != nil {
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyQueryMetricData(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeMetricListRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
+	request := &cms.DescribeMetricListRequest{}
 	if project, ok := params["Project"]; ok {
-		request.Namespace = project
+		request.Namespace = tea.String(project)
 	}
 	if metric, ok := params["Metric"]; ok {
-		request.MetricName = metric
+		request.MetricName = tea.String(metric)
 	}
 	if dims, ok := params["Dimensions"]; ok {
-		request.Dimensions = dims
+		request.Dimensions = tea.String(dims)
 	} else {
-		request.Dimensions = "{}"
+		request.Dimensions = tea.String("{}")
 	}
 	if period, ok := params["Period"]; ok {
 		if period != "auto" {
-			request.Period = period
+			request.Period = tea.String(period)
 		}
 	}
 	if size, ok := params["Length"]; ok {
-		request.Length = size
+		request.Length = tea.String(size)
 	} else {
-		request.Length = "1440"
+		request.Length = tea.String("1440")
 	}
 	if startTime, ok := params["StartTime"]; ok {
-		request.StartTime = startTime
+		request.StartTime = tea.String(startTime)
 	} else {
-		request.StartTime = "60"
+		request.StartTime = tea.String("60")
 	}
 	if endTime, ok := params["EndTime"]; ok {
-		request.EndTime = endTime
+		request.EndTime = tea.String(endTime)
 	} else {
-		request.EndTime = "60"
+		request.EndTime = tea.String("60")
 	}
 
 	response, err := client.DescribeMetricList(request)
@@ -233,47 +266,46 @@ func proxyQueryMetricData(instSetting *instanceSettings, params map[string]strin
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyQueryMetricLast(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := cms.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
-	request := cms.CreateDescribeMetricLastRequest()
-	request.Scheme = "https"
+	client, err := createCmsClient(instSetting)
+	request := &cms.DescribeMetricLastRequest{}
 
 	if project, ok := params["Project"]; ok {
-		request.Namespace = project
+		request.Namespace = tea.String(project)
 	}
 	if metric, ok := params["Metric"]; ok {
-		request.MetricName = metric
+		request.MetricName = tea.String(metric)
 	}
 	if dims, ok := params["Dimensions"]; ok {
-		request.Dimensions = dims
+		request.Dimensions = tea.String(dims)
 	} else {
-		request.Dimensions = "{}"
+		request.Dimensions = tea.String("{}")
 	}
 	if period, ok := params["Period"]; ok {
 		if period != "auto" {
-			request.Period = period
+			request.Period = tea.String(period)
 		}
 	}
 	if size, ok := params["Length"]; ok {
-		request.Length = size
+		request.Length = tea.String(size)
 	} else {
-		request.Length = "1440"
+		request.Length = tea.String("1440")
 	}
 	if startTime, ok := params["StartTime"]; ok {
-		request.StartTime = startTime
+		request.StartTime = tea.String(startTime)
 	} else {
-		request.StartTime = "60"
+		request.StartTime = tea.String("60")
 	}
 	if endTime, ok := params["EndTime"]; ok {
-		request.EndTime = endTime
+		request.EndTime = tea.String(endTime)
 	} else {
-		request.EndTime = "60"
+		request.EndTime = tea.String("60")
 	}
 
 	response, err := client.DescribeMetricLast(request)
@@ -281,32 +313,31 @@ func proxyQueryMetricLast(instSetting *instanceSettings, params map[string]strin
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyRdsDescribeTags(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := rds.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
+	client, err := createRdsClient(instSetting)
 
-	request := rds.CreateDescribeTagsRequest()
-	request.Scheme = "https"
+	request := &rds.DescribeTagsRequest{}
 
 	if regionID, ok := params["RegionId"]; ok {
-		request.RegionId = regionID
+		request.RegionId = tea.String(regionID)
 	}
 
 	if tags, ok := params["Tags"]; ok {
-		request.Tags = tags
+		request.Tags = tea.String(tags)
 	}
 
 	if tags, ok := params["Tags"]; ok {
-		request.Tags = tags
+		request.Tags = tea.String(tags)
 	}
 
 	if instanceID, ok := params["DBInstanceId"]; ok {
-		request.DBInstanceId = instanceID
+		request.DBInstanceId = tea.String(instanceID)
 	}
 
 	response, err := client.DescribeTags(request)
@@ -314,65 +345,64 @@ func proxyRdsDescribeTags(instSetting *instanceSettings, params map[string]strin
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyRdsListTagResources(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := rds.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
+	client, err := createRdsClient(instSetting)
 
-	request := rds.CreateListTagResourcesRequest()
-	request.Scheme = "https"
+	request := &rds.ListTagResourcesRequest{}
 	if regionID, ok := params["RegionId"]; ok {
-		request.RegionId = regionID
+		request.RegionId = tea.String(regionID)
 	} else {
-		request.RegionId = "cn-hangzhou"
+		request.RegionId = tea.String("cn-hangzhou")
 	}
 
 	if resourceType, ok := params["ResourceType"]; ok {
-		request.ResourceType = resourceType
+		request.ResourceType = tea.String(resourceType)
 	} else {
-		request.ResourceType = "INSTANCE"
+		request.ResourceType = tea.String("INSTANCE")
 	}
 
-	tags := []rds.ListTagResourcesTag{}
+	tags := []*rds.ListTagResourcesRequestTag{}
 	// only support 20 tags at most
 	for i := 1; i < 21; i++ {
 		tagkey := "Tag." + strconv.Itoa(i) + ".Key"
 		tagValue := "Tag." + strconv.Itoa(i) + ".Value"
-		tagObj := rds.ListTagResourcesTag{}
+		tagObj := &rds.ListTagResourcesRequestTag{}
 		if val, ok := params[tagkey]; ok {
-			tagObj.Key = val
+			tagObj.Key = tea.String(val)
 		} else {
 			continue
 		}
 		if val, ok := params[tagValue]; ok {
-			tagObj.Value = val
+			tagObj.Value = tea.String(val)
 		}
 		tags = append(tags, tagObj)
 	}
 	if len(tags) > 0 {
-		request.Tag = &tags
+		request.Tag = tags
 	}
 
-	resourceIDs := []string{}
+	resourceIDs := []*string{}
 	// only support 50 tags at most
 	for i := 1; i < 51; i++ {
 		tagkey := "ResourceId." + strconv.Itoa(i)
 		if val, ok := params[tagkey]; ok {
-			resourceIDs = append(resourceIDs, val)
+			resourceIDs = append(resourceIDs, tea.String(val))
 		} else {
 			continue
 		}
 	}
 	if len(resourceIDs) > 0 {
-		request.ResourceId = &resourceIDs
+		request.ResourceId = resourceIDs
 	}
 
 	if nextToken, ok := params["NextToken"]; ok {
-		request.NextToken = nextToken
+		request.NextToken = tea.String(nextToken)
 	}
 
 	response, err := client.ListTagResources(request)
@@ -380,71 +410,70 @@ func proxyRdsListTagResources(instSetting *instanceSettings, params map[string]s
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyEcsDescribeTags(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := ecs.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
+	client, err := createEcsClient(instSetting)
 
-	request := ecs.CreateDescribeTagsRequest()
-	request.Scheme = "https"
+	request := &ecs.DescribeTagsRequest{}
 	if pageSize, ok := params["PageSize"]; ok {
 		size, err := strconv.ParseInt(pageSize, 10, 32)
 		if err != nil {
-			request.PageSize = requests.NewInteger(int(size))
+			request.PageSize = tea.Int32(int32(size))
 		} else {
-			request.PageSize = requests.NewInteger(100)
+			request.PageSize = tea.Int32(100)
 		}
 	} else {
-		request.PageSize = requests.NewInteger(100)
+		request.PageSize = tea.Int32(100)
 	}
 
 	if pageNumber, ok := params["PageNumber"]; ok {
 		num, err := strconv.ParseInt(pageNumber, 10, 32)
 		if err != nil {
-			request.PageNumber = requests.NewInteger(int(num))
+			request.PageNumber = tea.Int32(int32(num))
 		} else {
-			request.PageNumber = requests.NewInteger(1)
+			request.PageNumber = tea.Int32(1)
 		}
 	} else {
-		request.PageNumber = requests.NewInteger(1)
+		request.PageNumber = tea.Int32(1)
 	}
 
 	if resourceType, ok := params["ResourceType"]; ok {
-		request.ResourceType = resourceType
+		request.ResourceType = tea.String(resourceType)
 	}
 
 	if resourceID, ok := params["ResourceId"]; ok {
-		request.ResourceId = resourceID
+		request.ResourceId = tea.String(resourceID)
 	}
 
 	if category, ok := params["Category"]; ok {
-		request.Category = category
+		request.Category = tea.String(category)
 	}
 
-	tags := []ecs.DescribeTagsTag{}
+	tags := []*ecs.DescribeTagsRequestTag{}
 	// only support 5 tags at most
 	for i := 1; i < 6; i++ {
 		tagkey := "Tag." + strconv.Itoa(i) + ".Key"
 		tagValue := "Tag." + strconv.Itoa(i) + ".Value"
-		tagObj := ecs.DescribeTagsTag{}
+		tagObj := &ecs.DescribeTagsRequestTag{}
 		if val, ok := params[tagkey]; ok {
-			tagObj.Key = val
+			tagObj.Key = tea.String(val)
 		} else {
 			continue
 		}
 		if val, ok := params[tagValue]; ok {
-			tagObj.Value = val
+			tagObj.Value = tea.String(val)
 		}
 		tags = append(tags, tagObj)
 	}
 	log.DefaultLogger.Debug("tags_length:" + strconv.Itoa(len(tags)))
 	if len(tags) > 0 {
-		log.DefaultLogger.Debug("tags_key:" + tags[0].Key)
-		request.Tag = &tags
+		log.DefaultLogger.Debug("tags_key:" + *tags[0].Key)
+		request.Tag = tags
 	}
 
 	response, err := client.DescribeTags(request)
@@ -452,82 +481,81 @@ func proxyEcsDescribeTags(instSetting *instanceSettings, params map[string]strin
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
 }
 
 func proxyEcsListTagResources(instSetting *instanceSettings, params map[string]string, rw http.ResponseWriter) {
-	client, err := ecs.NewClientWithAccessKey("cn-hangzhou", instSetting.accessKey, instSetting.accessSecret)
+	client, err := createEcsClient(instSetting)
 
-	request := ecs.CreateListTagResourcesRequest()
-	request.Scheme = "https"
+	request := &ecs.ListTagResourcesRequest{}
 
 	if regionID, ok := params["RegionId"]; ok {
-		request.RegionId = regionID
+		request.RegionId = tea.String(regionID)
 	}
 
 	if regionID, ok := params["RegionId"]; ok {
-		request.RegionId = regionID
+		request.RegionId = tea.String(regionID)
 	} else {
-		request.RegionId = "cn-hangzhou"
+		request.RegionId = tea.String("cn-hangzhou")
 	}
 
 	if resourceType, ok := params["ResourceType"]; ok {
-		request.ResourceType = resourceType
+		request.ResourceType = tea.String(resourceType)
 	} else {
-		request.ResourceType = "instance"
+		request.ResourceType = tea.String("instance")
 	}
 
 	if nextToken, ok := params["NextToken"]; ok {
-		request.NextToken = nextToken
+		request.NextToken = tea.String(nextToken)
 	}
 
-	tags := []ecs.ListTagResourcesTag{}
+	tags := []*ecs.ListTagResourcesRequestTag{}
 	// only support 5 tags at most
 	for i := 1; i < 6; i++ {
 		tagkey := "Tag." + strconv.Itoa(i) + ".Key"
 		tagValue := "Tag." + strconv.Itoa(i) + ".Value"
-		tagObj := ecs.ListTagResourcesTag{}
+		tagObj := &ecs.ListTagResourcesRequestTag{}
 		if val, ok := params[tagkey]; ok {
-			tagObj.Key = val
+			tagObj.Key = tea.String(val)
 		} else {
 			continue
 		}
 		if val, ok := params[tagValue]; ok {
-			tagObj.Value = val
+			tagObj.Value = tea.String(val)
 		}
 		tags = append(tags, tagObj)
 	}
 	if len(tags) > 0 {
-		request.Tag = &tags
+		request.Tag = tags
 	}
 
-	tagFilters := []ecs.ListTagResourcesTagFilter{}
+	tagFilters := []*ecs.ListTagResourcesRequestTagFilter{}
 	// only support 5 tags at most
 	for i := 1; i < 6; i++ {
-		tagObj := ecs.ListTagResourcesTagFilter{}
+		tagObj := &ecs.ListTagResourcesRequestTagFilter{}
 		tagkey := "TagFilter." + strconv.Itoa(i) + ".TagKey"
 		if val, ok := params[tagkey]; ok {
-			tagObj.TagKey = val
+			tagObj.TagKey = tea.String(val)
 		} else {
 			continue
 		}
-		tagFilterValues := []string{}
+		tagFilterValues := []*string{}
 		for ii := 1; ii < 6; ii++ {
 			tagValue := "TagFilter." + strconv.Itoa(i) + ".TagValues." + strconv.Itoa(ii)
 			if val, ok := params[tagValue]; ok {
-				tagFilterValues = append(tagFilterValues, val)
+				tagFilterValues = append(tagFilterValues, tea.String(val))
 			}
 		}
 		if len(tagFilterValues) > 0 {
-			tagObj.TagValues = &tagFilterValues
+			tagObj.TagValues = tagFilterValues
 		}
 		tagFilters = append(tagFilters, tagObj)
 	}
 	if len(tagFilters) > 0 {
-		request.TagFilter = &tagFilters
+		request.TagFilter = tagFilters
 	}
 
 	response, err := client.ListTagResources(request)
@@ -535,7 +563,7 @@ func proxyEcsListTagResources(instSetting *instanceSettings, params map[string]s
 		log.DefaultLogger.Error(err.Error())
 		handleResponse(rw, nil, err)
 	} else {
-		data, err := json.Marshal(response)
+		data, err := json.Marshal(response.Body)
 		log.DefaultLogger.Debug(string(data))
 		handleResponse(rw, data, err)
 	}
